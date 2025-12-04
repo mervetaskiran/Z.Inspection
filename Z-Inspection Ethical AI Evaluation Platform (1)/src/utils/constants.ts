@@ -2,7 +2,8 @@ export const roleColors = {
   admin: '#1F2937',
   'ethical-expert': '#1E40AF', 
   'medical-expert': '#9D174D',
-  'use-case-owner': '#065F46'
+  'use-case-owner': '#065F46',
+  'education-expert': '#7C3AED'
 };
 
 export const statusColors = {

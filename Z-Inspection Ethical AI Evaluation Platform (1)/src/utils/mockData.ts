@@ -49,7 +49,8 @@ export const mockUsers: User[] = [
   { id: 'user1', email: 'ethical@zinspection.com', name: 'Sarah Johnson', role: 'ethical-expert' },
   { id: 'user2', email: 'medical@zinspection.com', name: 'Dr. Emily Smith', role: 'medical-expert' },
   { id: 'user3', email: 'usecase@zinspection.com', name: 'John Davis', role: 'use-case-owner' },
-  { id: 'user4', email: 'ethical2@zinspection.com', name: 'David Brown', role: 'ethical-expert' }
+  { id: 'user4', email: 'ethical2@zinspection.com', name: 'David Brown', role: 'ethical-expert' },
+  { id: 'user5', email: 'education@zinspection.com', name: 'Prof. Maria Garcia', role: 'education-expert' }
 ];
 
 export const mockTensions: Tension[] = [

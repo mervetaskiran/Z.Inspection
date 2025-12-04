@@ -25,41 +25,95 @@ import {
 } from "./utils/mockData";
 
 function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(
-    null,
-  );
-  const [currentView, setCurrentView] =
-    useState<string>("dashboard");
-  const [selectedProject, setSelectedProject] =
-    useState<Project | null>(null);
-  const [selectedTension, setSelectedTension] =
-    useState<Tension | null>(null);
-  const [selectedOwner, setSelectedOwner] =
-    useState<UseCaseOwner | null>(null);
-  const [selectedUseCase, setSelectedUseCase] =
-    useState<UseCase | null>(null);
-  const [projects, setProjects] =
-    useState<Project[]>(mockProjects);
-  const [useCases, setUseCases] =
-    useState<UseCase[]>(mockUseCases);
-  const [users] = useState<User[]>(mockUsers);
-  const [needsPrecondition, setNeedsPrecondition] =
-    useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentView, setCurrentView] = useState<string>("dashboard");
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedTension, setSelectedTension] = useState<Tension | null>(null);
+  const [selectedOwner, setSelectedOwner] = useState<UseCaseOwner | null>(null);
+  const [selectedUseCase, setSelectedUseCase] = useState<UseCase | null>(null);
+  
+  // Veritabanı kullanıldığı için başlangıç değerlerini boş [] yapıyoruz
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [useCases, setUseCases] = useState<UseCase[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  
+  const [needsPrecondition, setNeedsPrecondition] = useState(false);
 
-  const handleLogin = (
+  // --- VERİ ÇEKME İŞLEMLERİ (Backend'den) ---
+  useEffect(() => {
+    // 1. Projeleri Çek
+    const fetchProjects = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/projects');
+        if (response.ok) {
+          const data = await response.json();
+          const formattedProjects = data.map((p: any) => ({ ...p, id: p._id }));
+          setProjects(formattedProjects);
+        }
+      } catch (error) { console.error("Projeler yüklenemedi:", error); }
+    };
+
+    // 2. Kullanıcıları Çek
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/users');
+        if (response.ok) {
+          const data = await response.json();
+          const formattedUsers = data.map((u: any) => ({ ...u, id: u._id }));
+          setUsers(formattedUsers);
+        }
+      } catch (error) { console.error("Kullanıcılar yüklenemedi:", error); }
+    };
+
+    // 3. Use Case'leri Çek
+    const fetchUseCases = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/use-cases');
+        if (response.ok) {
+          const data = await response.json();
+          const formattedUseCases = data.map((u: any) => ({ ...u, id: u._id }));
+          setUseCases(formattedUseCases);
+        }
+      } catch (error) { console.error("Use Case'ler yüklenemedi:", error); }
+    };
+
+    fetchProjects();
+    fetchUsers();
+    fetchUseCases();
+  }, []);
+
+  // --- HANDLERS (Fonksiyonlar) ---
+
+  const handleLogin = async (
     email: string,
     password: string,
     role: string,
   ) => {
-    // Mock authentication
-    const user = mockUsers.find(
-      (u) => u.email === email && u.role === role,
-    );
-    if (user) {
-      setCurrentUser(user);
-      if (role !== "admin") {
-        setNeedsPrecondition(true);
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, role })
+      });
+
+      if (response.ok) {
+        const userDB = await response.json();
+        const userFrontend = {
+          ...userDB,
+          id: userDB._id 
+        };
+
+        setCurrentUser(userFrontend);
+
+        if (role !== "admin") {
+          setNeedsPrecondition(true);
+        }
+      } else {
+        alert("Giriş başarısız! Bilgileri kontrol edin.");
       }
+    } catch (error) {
+      console.error("Login hatası:", error);
+      alert("Sunucuya bağlanılamadı.");
     }
   };
 
@@ -113,42 +167,72 @@ function App() {
     setCurrentView("usecase-detail");
   };
 
-  const handleCreateProject = (
-    projectData: Partial<Project>,
-  ) => {
-    const newProject: Project = {
-      id: Date.now().toString(),
-      title: projectData.title || "",
-      shortDescription: projectData.shortDescription || "",
-      fullDescription: projectData.fullDescription || "",
-      stage: "set-up",
-      status: "ongoing",
-      targetDate: projectData.targetDate || "",
-      assignedUsers: projectData.assignedUsers || [],
-      createdAt: new Date().toISOString(),
-      isNew: true,
-      progress: 0,
-    };
-    setProjects([newProject, ...projects]);
+  const handleCreateProject = async (projectData: Partial<Project>) => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...projectData,
+          status: "ongoing",
+          stage: "set-up",
+          progress: 0,
+          assignedUsers: projectData.assignedUsers || [] 
+        })
+      });
+
+      if (response.ok) {
+        const newProjectDB = await response.json();
+        
+        const newProjectFrontend: Project = {
+          ...newProjectDB,
+          id: newProjectDB._id, 
+          isNew: true,
+        };
+
+        setProjects([newProjectFrontend, ...projects]);
+        alert("Proje başarıyla oluşturuldu!");
+      } else {
+        alert("Proje oluşturulurken bir hata oluştu.");
+      }
+    } catch (error) {
+      console.error("Proje oluşturma hatası:", error);
+      alert("Sunucuya bağlanılamadı.");
+    }
   };
 
-  const handleCreateUseCase = (
-    useCaseData: Partial<UseCase>,
-  ) => {
-    const newUseCase: UseCase = {
-      id: `uc${Date.now()}`,
-      title: useCaseData.title || "",
-      description: useCaseData.description || "",
-      aiSystemCategory: useCaseData.aiSystemCategory || "",
-      status: "assigned",
-      progress: 0,
-      ownerId: currentUser?.id || "",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      supportingFiles: useCaseData.supportingFiles || [],
-    };
-    setUseCases([newUseCase, ...useCases]);
+  const handleCreateUseCase = async (useCaseData: Partial<UseCase>) => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/use-cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...useCaseData,
+          ownerId: currentUser?.id,
+          status: 'assigned',
+          progress: 0,
+          assignedExperts: [],
+          supportingFiles: []
+        })
+      });
+
+      if (response.ok) {
+        const newUseCaseDB = await response.json();
+        const newUseCaseFrontend = { 
+            ...newUseCaseDB, 
+            id: newUseCaseDB._id 
+        };
+        
+        setUseCases([newUseCaseFrontend, ...useCases]);
+        alert("Use Case başarıyla oluşturuldu!");
+      }
+    } catch (error) {
+      console.error("Use Case oluşturma hatası:", error);
+      alert("Sunucuya bağlanılamadı.");
+    }
   };
+
+  // --- RENDER MANTIĞI ---
 
   if (!currentUser) {
     return <LoginScreen onLogin={handleLogin} />;

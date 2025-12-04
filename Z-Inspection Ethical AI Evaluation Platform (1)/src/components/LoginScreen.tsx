@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Mail, Lock, User } from 'lucide-react';
+import { Mail, Lock, User, CheckCircle2, Users, FileText, BarChart3 } from 'lucide-react';
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string, role: string) => void;
@@ -9,7 +9,8 @@ const roleColors = {
   admin: '#1F2937',
   'ethical-expert': '#1E40AF', 
   'medical-expert': '#9D174D',
-  'use-case-owner': '#065F46'
+  'use-case-owner': '#065F46',
+  'education-expert': '#7C3AED'
 };
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
@@ -19,24 +20,51 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<string>('admin');
 
-  const handleSubmit = (e: React.FormEvent) => {
+// LoginScreen.tsx içindeki handleSubmit fonksiyonu:
+
+// LoginScreen.tsx içindeki handleSubmit:
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (isLogin) {
+      // Giriş yapma işlemi (App.tsx'teki handleLogin'i tetikler)
       onLogin(email, password, role);
     } else {
-      // Mock registration - in real app would create user
-      alert('Registration successful! Please log in.');
-      setIsLogin(true);
-      setName('');
-      setPassword('');
+      // --- KAYIT OLMA (REGISTER) İŞLEMİ ---
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name,
+            email: email,
+            password: password,
+            role: role
+          })
+        });
+
+        if (response.ok) {
+          alert('Kayıt başarılı! Şimdi giriş yapabilirsiniz.');
+          setIsLogin(true); // Giriş ekranına otomatik geçiş yap
+        } else {
+          const errorData = await response.json();
+          alert('Kayıt hatası: ' + (errorData.message || "Bilinmeyen hata"));
+        }
+      } catch (error) {
+        console.error("Kayıt hatası:", error);
+        alert("Sunucuya bağlanılamadı. Backend'in açık olduğundan emin olun.");
+      }
     }
-  };
+  };      
+  
 
   const demoCredentials = [
-    { role: 'admin', email: 'admin@zinspection.com', name: 'Admin User' },
-    { role: 'ethical-expert', email: 'ethical@zinspection.com', name: 'Sarah Johnson' },
-    { role: 'medical-expert', email: 'medical@zinspection.com', name: 'Dr. Emily Smith' },
-    { role: 'use-case-owner', email: 'usecase@zinspection.com', name: 'John Davis' }
+    { role: 'admin', email: 'admin@zinspection.com', name: 'Admin User', displayName: 'Admin' },
+    { role: 'ethical-expert', email: 'ethical@zinspection.com', name: 'Sarah Johnson', displayName: 'Ethical Expert' },
+    { role: 'medical-expert', email: 'medical@zinspection.com', name: 'Dr. Emily Smith', displayName: 'Medical Expert' },
+    { role: 'use-case-owner', email: 'usecase@zinspection.com', name: 'John Davis', displayName: 'Use Case Expert' },
+    { role: 'education-expert', email: 'education@zinspection.com', name: 'Prof. Maria Garcia', displayName: 'Education Expert' }
   ];
 
   return (
@@ -115,7 +143,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                 <option value="admin">Admin</option>
                 <option value="ethical-expert">Ethical Expert</option>
                 <option value="medical-expert">Medical Expert</option>
-                <option value="use-case-owner">Use Case Owner</option>
+                <option value="use-case-owner">Use Case Expert</option>
+                <option value="education-expert">Education Expert</option>
               </select>
             </div>
 
@@ -138,49 +167,62 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </div>
 
           {isLogin && (
-            <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-              <h3 className="text-sm mb-2 text-blue-900">Demo Credentials</h3>
-              <div className="space-y-1 text-xs text-blue-800">
+            <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-100">
+              <h3 className="text-sm mb-3 text-blue-900">Demo Credentials</h3>
+              <div className="space-y-2 text-xs">
                 {demoCredentials.map((cred) => (
-                  <div key={cred.role} className="flex justify-between">
-                    <span className="font-medium">{cred.role === 'ethical-expert' ? 'Ethical Expert' : cred.role === 'medical-expert' ? 'Medical Expert' : cred.role === 'use-case-owner' ? 'Use Case Owner' : 'Admin'}:</span>
-                    <span>{cred.email}</span>
+                  <div key={cred.role} className="flex justify-between items-center py-1">
+                    <span className="font-medium" style={{ color: roleColors[cred.role as keyof typeof roleColors] }}>
+                      {cred.displayName}:
+                    </span>
+                    <span className="text-gray-700">{cred.email}</span>
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-blue-700 mt-2">Password: any text</p>
+              <p className="text-xs text-blue-700 mt-3 pt-3 border-t border-blue-200">
+                Password: <span className="font-medium">any text</span>
+              </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Right Side - Illustration/Welcome */}
+      {/* Right Side - Promotional Panel */}
       <div 
         className="w-1/2 flex flex-col justify-center items-center text-white px-12"
         style={{ backgroundColor: roleColors[role as keyof typeof roleColors] }}
       >
         <div className="text-center max-w-lg">
-          <div className="text-6xl mb-6">🔍</div>
-          <h2 className="text-3xl mb-4">Ethical AI Evaluation</h2>
-          <p className="text-lg opacity-90 mb-6">
+          {/* Logo */}
+          <div className="mb-6 flex items-center justify-center">
+            <div className="w-20 h-20 bg-white bg-opacity-20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+              <span className="text-5xl">🔍</span>
+            </div>
+          </div>
+          
+          {/* Tagline */}
+          <h2 className="text-4xl mb-4">Ethical AI Evaluation</h2>
+          <p className="text-xl opacity-90 mb-10 leading-relaxed">
             Comprehensive platform for conducting Z-Inspection methodology on AI systems.
           </p>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <div className="text-2xl mb-1">📋</div>
-              <div>Structured Evaluation</div>
+          
+          {/* Feature Icons */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
+              <CheckCircle2 className="h-8 w-8 mb-3 mx-auto" />
+              <p className="font-medium text-center text-[rgb(21,21,21)]">Structured Evaluation</p>
             </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <div className="text-2xl mb-1">👥</div>
-              <div>Multi-Role Collaboration</div>
+            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
+              <Users className="h-8 w-8 mb-3 mx-auto" />
+              <p className="font-medium text-center text-[rgb(13,13,13)]">Multi-Role Collaboration</p>
             </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <div className="text-2xl mb-1">📊</div>
-              <div>Claims Management</div>
+            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
+              <BarChart3 className="h-8 w-8 mb-3 mx-auto" />
+              <p className="font-medium text-center text-[rgb(22,22,22)]">Tensions Management</p>
             </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <div className="text-2xl mb-1">📄</div>
-              <div>Comprehensive Reports</div>
+            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
+              <FileText className="h-8 w-8 mb-3 mx-auto" />
+              <p className="font-medium text-center text-[rgb(17,17,17)]">Comprehensive Reports</p>
             </div>
           </div>
         </div>

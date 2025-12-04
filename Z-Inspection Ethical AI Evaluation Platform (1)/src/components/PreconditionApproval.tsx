@@ -11,7 +11,8 @@ const roleColors = {
   admin: '#1F2937',
   'ethical-expert': '#1E40AF', 
   'medical-expert': '#9D174D',
-  'use-case-owner': '#065F46'
+  'use-case-owner': '#065F46',
+  'education-expert': '#7C3AED'
 };
 
 const roleContent = {
@@ -43,6 +44,16 @@ const roleContent = {
       'Review claims relevant to your use case',
       'Assess practical applicability and real-world impact',
       'Contribute evidence from your area of expertise'
+    ]
+  },
+  'education-expert': {
+    title: 'Education Expert Guidelines',
+    disclaimer: 'As an education expert on the Z-Inspection platform, you will be evaluating AI systems from an educational and pedagogical perspective.',
+    responsibilities: [
+      'Review educational impact and learning outcomes',
+      'Assess accessibility and inclusive learning design',
+      'Evaluate pedagogical validity and effectiveness',
+      'Analyze student privacy and educational ethics compliance'
     ]
   }
 };

@@ -2,7 +2,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'ethical-expert' | 'medical-expert' | 'use-case-owner';
+  role: 'admin' | 'ethical-expert' | 'medical-expert' | 'use-case-owner' | 'education-expert';
 }
 
 export interface Project {

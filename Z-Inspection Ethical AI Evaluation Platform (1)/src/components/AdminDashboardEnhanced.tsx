@@ -433,8 +433,8 @@ function ProjectCreationTab({ users, onCreateProject }: any) {
     setSelectedOwner('');
   };
 
-  const useOwners = users.filter((u: User) => u.role === 'use-case-owner');
-
+// Admin olmayan herkesi (Uzmanları, Use Case sahiplerini vs.) listeye ekle
+const useOwners = users.filter((u: User) => u.role !== 'admin');
   return (
     <>
       <div className="bg-white border-b border-gray-200 px-8 py-6">

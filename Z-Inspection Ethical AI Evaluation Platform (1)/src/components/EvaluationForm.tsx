@@ -21,14 +21,15 @@ interface Question {
 
 const roleColors = {
   admin: '#1F2937',
-  legal: '#1E40AF', 
-  technical: '#065F46',
-  medical: '#9D174D'
+  'ethical-expert': '#1E40AF', 
+  'medical-expert': '#9D174D',
+  'use-case-owner': '#065F46',
+  'education-expert': '#7C3AED'
 };
 
 // Role-specific question banks
 const questionBanks = {
-  legal: {
+  'ethical-expert': {
     'set-up': [
       {
         id: 'legal_1',
@@ -90,7 +91,7 @@ const questionBanks = {
       }
     ]
   },
-  technical: {
+  'use-case-owner': {
     'set-up': [
       {
         id: 'tech_1',
@@ -152,7 +153,7 @@ const questionBanks = {
       }
     ]
   },
-  medical: {
+  'medical-expert': {
     'set-up': [
       {
         id: 'med_1',
@@ -224,6 +225,28 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [isDraft, setIsDraft] = useState(true);
 
+  React.useEffect(() => {
+    const fetchEvaluation = async () => {
+      try {
+        const url = `http://127.0.0.1:5000/api/evaluations?projectId=${project.id}&userId=${currentUser.id}&stage=${currentStage}`;
+        
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.answers) {
+            setAnswers(data.answers);
+            if (data.riskLevel) setRiskLevel(data.riskLevel);
+          } else {
+            setAnswers({});
+          }
+        }
+      } catch (error) {
+        console.error("Veri çekme hatası:", error);
+      }
+    };
+
+    fetchEvaluation();
+  }, [project.id, currentUser.id, currentStage]);
   const roleColor = roleColors[currentUser.role as keyof typeof roleColors];
   const userQuestions = questionBanks[currentUser.role as keyof typeof questionBanks] || { 'set-up': [], assess: [], resolve: [] };
   const currentQuestions = [...userQuestions[currentStage as keyof typeof userQuestions] || [], ...customQuestions.filter(q => q.stage === currentStage)];
@@ -238,12 +261,33 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     setAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
-  const handleSaveDraft = () => {
-    setIsDraft(true);
-    alert('Draft saved successfully!');
+// EvaluationForm.tsx içindeki handleSaveDraft:
+
+  const handleSaveDraft = async () => {
+    try {
+      await fetch('http://127.0.0.1:5000/api/evaluations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          userId: currentUser.id,
+          role: currentUser.role,
+          stage: currentStage,
+          answers: answers,
+          riskLevel: riskLevel,
+          isDraft: true // Bu bir taslak olduğu için true
+        })
+      });
+      setIsDraft(true);
+      alert('Taslak başarıyla kaydedildi! Daha sonra kaldığınız yerden devam edebilirsiniz.');
+    } catch (error) {
+      console.error("Taslak hatası:", error);
+      alert("Taslak kaydedilemedi. Sunucu bağlantısını kontrol edin.");
+    }
   };
 
-  const handleSubmitForm = () => {
+const handleSubmitForm = async () => {
+    // 1. ZORUNLU SORU KONTROLÜ (Senin gösterdiğin kısım burada kalıyor)
     const requiredQuestions = currentQuestions.filter(q => q.required);
     const missingAnswers = requiredQuestions.filter(q => !answers[q.id]);
     
@@ -252,9 +296,33 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
       return;
     }
     
-    setIsDraft(false);
-    alert('Evaluation submitted successfully!');
-    onSubmit();
+    // 2. VERİTABANI KAYDI (Burası yeni eklenen kısım)
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/evaluations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          userId: currentUser.id,
+          role: currentUser.role,
+          stage: currentStage,
+          answers: answers,
+          riskLevel: riskLevel,
+          isDraft: false // Submit edildiği için taslak değil, tamamlanmış sayılır
+        })
+      });
+
+      if (response.ok) {
+        setIsDraft(false);
+        alert('Değerlendirme başarıyla veritabanına kaydedildi!');
+        onSubmit(); // Dashboard'a geri dön
+      } else {
+        alert('Kaydetme başarısız oldu.');
+      }
+    } catch (error) {
+      console.error("Hata:", error);
+      alert("Sunucuya bağlanılamadı.");
+    }
   };
 
   const addCustomQuestion = (question: Question) => {
