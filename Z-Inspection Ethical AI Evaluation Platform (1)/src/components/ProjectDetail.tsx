@@ -1,13 +1,32 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Calendar, Users as UsersIcon, Download, FileText, MessageSquare, Shield, Target, BarChart3, Plus, MoreVertical, FileUp, User as UserIconLucide } from 'lucide-react';
-import { Project, User, Tension, Evaluation, Evidence, UseCaseOwner, TensionSeverity, EthicalPrinciple } from '../types';
+import {
+  ArrowLeft,
+  Calendar,
+  Users as UsersIcon,
+  Download,
+  FileText,
+  MessageSquare,
+  Shield,
+  Target,
+  BarChart3,
+  Plus,
+  MoreVertical,
+  User as UserIconLucide
+} from 'lucide-react';
+import {
+  Project,
+  User,
+  Tension,
+  UseCaseOwner,
+  TensionSeverity,
+  EthicalPrinciple
+} from '../types';
 import { mockEvidences, mockTensions } from '../utils/mockData';
 import { UseCaseOwners } from './UseCaseOwners';
-import { formatRoleName, getSeverityColor } from '../utils/helpers';
+import { formatRoleName } from '../utils/helpers';
 import { SeveritySelector } from './SeveritySelector';
 import { EthicalTensionSelector } from './EthicalTensionSelector';
 import { SeverityBadge } from './SeverityBadge';
-import { SeverityDistributionChart } from './SeverityDistributionChart';
 
 interface ProjectDetailProps {
   project: Project;
@@ -21,10 +40,12 @@ interface ProjectDetailProps {
 
 const roleColors = {
   admin: '#1F2937',
-  'ethical-expert': '#1E40AF', 
+  'ethical-expert': '#1E40AF',
   'medical-expert': '#9D174D',
   'use-case-owner': '#065F46',
-  'education-expert': '#7C3AED'
+  'education-expert': '#7C3AED',
+  'technical-expert': '#0891B2',
+  'legal-expert': '#B45309'
 };
 
 const statusColors = {
@@ -33,29 +54,39 @@ const statusColors = {
   disproven: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200' }
 };
 
-// Use mock data from mockData.ts
-
-export function ProjectDetail({ project, currentUser, users, onBack, onStartEvaluation, onViewTension, onViewOwner }: ProjectDetailProps) {
-  const [activeTab, setActiveTab] = useState<'evaluation' | 'tensions' | 'usecase' | 'owners'>('evaluation');
+export function ProjectDetail({
+  project,
+  currentUser,
+  users,
+  onBack,
+  onStartEvaluation,
+  onViewTension,
+  onViewOwner
+}: ProjectDetailProps) {
+  const [activeTab, setActiveTab] = useState<'evaluation' | 'tensions' | 'usecase' | 'owners'>(
+    'evaluation'
+  );
   const [showAddTension, setShowAddTension] = useState(false);
   const [showAddEvidence, setShowAddEvidence] = useState(false);
-  const [selectedTensionForEvidence, setSelectedTensionForEvidence] = useState<string | null>(null);
-  
+  const [selectedTensionForEvidence, setSelectedTensionForEvidence] = useState<string | null>(
+    null
+  );
+
   const canViewOwners = currentUser.role === 'admin' || currentUser.role === 'ethical-expert';
-  
-  const roleColor = roleColors[currentUser.role as keyof typeof roleColors];
+
+  const roleColor = roleColors[currentUser.role as keyof typeof roleColors] || '#1F2937';
   const isAssigned = project.assignedUsers.includes(currentUser.id);
   const isAdmin = currentUser.role === 'admin';
 
-  const assignedUserDetails = users.filter(user => project.assignedUsers.includes(user.id));
+  const assignedUserDetails = users.filter((user) => project.assignedUsers.includes(user.id));
 
   const stages = [
     { key: 'set-up', label: 'Set-up', icon: '🚀' },
     { key: 'assess', label: 'Assess', icon: '🔍' },
     { key: 'resolve', label: 'Resolve', icon: '📊' }
-  ];
+  ] as const;
 
-  const getCurrentStageIndex = () => stages.findIndex(stage => stage.key === project.stage);
+  const getCurrentStageIndex = () => stages.findIndex((stage) => stage.key === project.stage);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -75,9 +106,10 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                 <div className="flex items-center">
                   <h1 className="text-xl text-gray-900 mr-3">{project.title}</h1>
                   {project.isNew && (
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">NEW</span>
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                      NEW
+                    </span>
                   )}
-
                 </div>
                 <p className="text-gray-600">{project.shortDescription}</p>
               </div>
@@ -112,7 +144,7 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
               {stages.map((stage, index) => {
                 const isActive = index <= getCurrentStageIndex();
                 const isCurrent = stage.key === project.stage;
-                
+
                 return (
                   <div key={stage.key} className="flex flex-col items-center flex-1">
                     <div
@@ -126,7 +158,9 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                     >
                       {stage.icon}
                     </div>
-                    <span className={`mt-2 text-sm ${isActive ? 'text-gray-900' : 'text-gray-500'}`}>
+                    <span
+                      className={`mt-2 text-sm ${isActive ? 'text-gray-900' : 'text-gray-500'}`}
+                    >
                       {stage.label}
                     </span>
                     {index < stages.length - 1 && (
@@ -135,7 +169,9 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                           index < getCurrentStageIndex() ? 'bg-green-500' : 'bg-gray-200'
                         }`}
                         style={{
-                          left: `${(index + 1) * (100 / stages.length) - (100 / stages.length / 2)}%`,
+                          left: `${
+                            (index + 1) * (100 / stages.length) - 100 / stages.length / 2
+                          }%`,
                           width: `${100 / stages.length}%`,
                           transform: 'translateX(-50%)'
                         }}
@@ -155,11 +191,13 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
               <Calendar className="h-5 w-5 text-gray-400 mr-2" />
               <div>
                 <div className="text-xs text-gray-600">Target Date</div>
-                <div className="text-sm text-gray-900">{new Date(project.targetDate).toLocaleDateString()}</div>
+                <div className="text-sm text-gray-900">
+                  {new Date(project.targetDate).toLocaleDateString()}
+                </div>
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg shadow-sm border p-4">
             <div className="flex items-center">
               <UsersIcon className="h-5 w-5 text-gray-400 mr-2" />
@@ -169,7 +207,7 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg shadow-sm border p-4">
             <div className="flex items-center">
               <Target className="h-5 w-5 text-gray-400 mr-2" />
@@ -179,7 +217,7 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg shadow-sm border p-4">
             <div className="flex items-center">
               <BarChart3 className="h-5 w-5 text-gray-400 mr-2" />
@@ -286,46 +324,54 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                  {assignedUserDetails.map(user => (
-                    <div key={user.id} className="border rounded-lg p-4">
-                      <div className="flex items-center mb-3">
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm mr-3"
-                          style={{ backgroundColor: roleColors[user.role as keyof typeof roleColors] }}
-                        >
-                          {user.name.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="text-sm text-gray-900">{user.name}</div>
-                          <div className="text-xs text-gray-500">{formatRoleName(user.role)}</div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-xs text-gray-600">
-                          <span>Progress</span>
-                          <span>{Math.floor(Math.random() * 100)}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  {assignedUserDetails.map((user) => {
+                    const userColor =
+                      roleColors[user.role as keyof typeof roleColors] || '#1F2937';
+                    const randomProgress = Math.floor(Math.random() * 100);
+                    const randomBar = Math.floor(Math.random() * 100);
+                    const randomStatus = Math.random() > 0.5 ? 'In Progress' : 'Completed';
+
+                    return (
+                      <div key={user.id} className="border rounded-lg p-4">
+                        <div className="flex items-center mb-3">
                           <div
-                            className="h-1.5 rounded-full"
-                            style={{ 
-                              width: `${Math.floor(Math.random() * 100)}%`,
-                              backgroundColor: roleColors[user.role as keyof typeof roleColors] 
-                            }}
-                          />
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm mr-3"
+                            style={{ backgroundColor: userColor }}
+                          >
+                            {user.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-900">{user.name}</div>
+                            <div className="text-xs text-gray-500">{formatRoleName(user.role)}</div>
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-600">
-                          Status: {Math.random() > 0.5 ? 'In Progress' : 'Completed'}
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs text-gray-600">
+                            <span>Progress</span>
+                            <span>{randomProgress}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div
+                              className="h-1.5 rounded-full"
+                              style={{
+                                width: `${randomBar}%`,
+                                backgroundColor: userColor
+                              }}
+                            />
+                          </div>
+                          <div className="text-xs text-gray-600">Status: {randomStatus}</div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {!isAssigned && (
                   <div className="bg-gray-50 border rounded-lg p-4 text-center">
                     <p className="text-gray-600 mb-2">You are not assigned to this project</p>
-                    <p className="text-sm text-gray-500">You can view project details and participate in discussions</p>
+                    <p className="text-sm text-gray-500">
+                      You can view project details and participate in discussions
+                    </p>
                   </div>
                 )}
               </div>
@@ -345,11 +391,15 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                 </div>
 
                 <div className="space-y-4">
-                  {mockTensions.map(tension => {
-                    const evidenceCount = mockEvidences.filter(ev => ev.tensionId === tension.id).length;
+                  {mockTensions.map((tension) => {
+                    const evidenceCount = mockEvidences.filter(
+                      (ev) => ev.tensionId === tension.id
+                    ).length;
+                    const creator = users.find((u) => u.id === tension.createdBy);
+
                     return (
-                      <div 
-                        key={tension.id} 
+                      <div
+                        key={tension.id}
                         className="border rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
                         onClick={() => onViewTension?.(tension)}
                       >
@@ -358,12 +408,15 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                             <div className="flex items-center mb-2">
                               <SeverityBadge severity={tension.severity} size="md" />
                               <span
-                                className={`ml-2 px-2 py-1 text-xs rounded-full ${statusColors[tension.status].bg} ${statusColors[tension.status].text}`}
+                                className={`ml-2 px-2 py-1 text-xs rounded-full ${
+                                  statusColors[tension.status].bg
+                                } ${statusColors[tension.status].text}`}
                               >
                                 {tension.status.toUpperCase()}
                               </span>
                               <span className="ml-2 text-xs text-gray-500">
-                                by {users.find(u => u.id === tension.createdBy)?.name} on {new Date(tension.createdAt).toLocaleDateString()}
+                                by {creator ? creator.name : 'Unknown'} on{' '}
+                                {new Date(tension.createdAt).toLocaleDateString()}
                               </span>
                               {evidenceCount > 0 && (
                                 <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full flex items-center">
@@ -375,8 +428,10 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                             <h4 className="text-base text-gray-900 mb-2 flex items-center">
                               {tension.claimStatement}
                             </h4>
-                            <p className="text-sm text-gray-600 mb-3">{tension.supportingArgument}</p>
-                            
+                            <p className="text-sm text-gray-600 mb-3">
+                              {tension.supportingArgument}
+                            </p>
+
                             {/* Consensus Indicator */}
                             <div className="flex items-center space-x-4">
                               <div className="text-xs text-gray-600">Consensus:</div>
@@ -387,12 +442,14 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                                     style={{ width: `${tension.consensus.agree}%` }}
                                   />
                                 </div>
-                                <span className="text-xs text-gray-600">{tension.consensus.agree}% agree</span>
+                                <span className="text-xs text-gray-600">
+                                  {tension.consensus.agree}% agree
+                                </span>
                               </div>
                             </div>
                           </div>
-                          
-                          <button 
+
+                          <button
                             className="p-1 text-gray-400 hover:text-gray-600"
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -401,25 +458,25 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                         </div>
 
                         <div className="flex items-center space-x-2">
-                          <button 
+                          <button
                             className="px-3 py-1 text-xs bg-green-100 text-green-800 rounded-full hover:bg-green-200"
                             onClick={(e) => e.stopPropagation()}
                           >
                             Agree
                           </button>
-                          <button 
+                          <button
                             className="px-3 py-1 text-xs bg-red-100 text-red-800 rounded-full hover:bg-red-200"
                             onClick={(e) => e.stopPropagation()}
                           >
                             Disagree
                           </button>
-                          <button 
+                          <button
                             className="px-3 py-1 text-xs bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200"
                             onClick={(e) => e.stopPropagation()}
                           >
                             Comment
                           </button>
-                          <button 
+                          <button
                             className="px-3 py-1 text-xs bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 flex items-center"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -448,7 +505,9 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
                         <FileText className="h-6 w-6 text-gray-400 mr-3" />
                         <div>
                           <div className="text-sm text-gray-900">{project.useCase.filename}</div>
-                          <div className="text-xs text-gray-500">Uploaded on {new Date(project.createdAt).toLocaleDateString()}</div>
+                          <div className="text-xs text-gray-500">
+                            Uploaded on {new Date(project.createdAt).toLocaleDateString()}
+                          </div>
                         </div>
                       </div>
                       <div className="flex space-x-2">
@@ -479,11 +538,7 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
             )}
 
             {activeTab === 'owners' && canViewOwners && onViewOwner && (
-              <UseCaseOwners
-                currentUser={currentUser}
-                projects={[project]}
-                onViewOwner={onViewOwner}
-              />
+              <UseCaseOwners currentUser={currentUser} projects={[project]} onViewOwner={onViewOwner} />
             )}
           </div>
         </div>
@@ -491,19 +546,17 @@ export function ProjectDetail({ project, currentUser, users, onBack, onStartEval
 
       {/* Add Evidence Modal */}
       {showAddEvidence && selectedTensionForEvidence && (
-        <AddEvidenceModal 
+        <AddEvidenceModal
           tensionId={selectedTensionForEvidence}
           onClose={() => {
             setShowAddEvidence(false);
             setSelectedTensionForEvidence(null);
-          }} 
+          }}
         />
       )}
 
       {/* Add Tension Modal */}
-      {showAddTension && (
-        <AddTensionModal onClose={() => setShowAddTension(false)} />
-      )}
+      {showAddTension && <AddTensionModal onClose={() => setShowAddTension(false)} />}
     </div>
   );
 }
@@ -535,7 +588,7 @@ function AddTensionModal({ onClose }: AddTensionModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <EthicalTensionSelector 
+          <EthicalTensionSelector
             principle1={principle1}
             principle2={principle2}
             onPrinciple1Change={setPrinciple1}
@@ -613,6 +666,7 @@ function AddEvidenceModal({ tensionId, onClose }: AddEvidenceModalProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Mock add evidence functionality
+    console.log('Evidence for tension:', tensionId, { title, description, file });
     alert('Evidence added successfully!');
     onClose();
   };
@@ -638,7 +692,7 @@ function AddEvidenceModal({ tensionId, onClose }: AddEvidenceModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm mb-2 text-gray-700">Description *</label>
+            <label className="block text.sm mb-2 text-gray-700">Description *</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -657,7 +711,9 @@ function AddEvidenceModal({ tensionId, onClose }: AddEvidenceModalProps) {
               className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               accept=".pdf,.doc,.docx,.xls,.xlsx,.csv"
             />
-            <p className="text-xs text-gray-500 mt-1">Accepted formats: PDF, DOC, DOCX, XLS, XLSX, CSV</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Accepted formats: PDF, DOC, DOCX, XLS, XLSX, CSV
+            </p>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4">
