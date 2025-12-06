@@ -59,7 +59,7 @@ function App() {
       } catch (error) { console.error("Kullanıcılar yüklenemedi:", error); }
     };
 
-    // 3. Use Case'leri Çek
+    // 3. Use Case'leri Çek (İŞTE BU SATIR VERİLERİN GELMESİNİ SAĞLAR)
     const fetchUseCases = async () => {
       try {
         const response = await fetch('http://127.0.0.1:5000/api/use-cases');
@@ -76,7 +76,7 @@ function App() {
     fetchUseCases();
   }, []);
 
-  // --- LOGIN / LOGOUT ---
+  // --- LOGIN ---
   const handleLogin = async (
     email: string,
     password: string,
@@ -121,7 +121,7 @@ function App() {
     setNeedsPrecondition(false);
   };
 
-  // --- NAVIGATION HANDLERS ---
+  // --- NAVIGATION ---
   const handleViewProject = (project: Project) => {
     setSelectedProject(project);
     setCurrentView("project-detail");
@@ -161,7 +161,7 @@ function App() {
     setCurrentView("usecase-detail");
   };
 
-  // --- CREATE HANDLERS ---
+  // --- CREATION HANDLERS (BACKEND'E KAYIT) ---
   const handleCreateProject = async (projectData: Partial<Project>) => {
     try {
       const response = await fetch('http://127.0.0.1:5000/api/projects', {
@@ -179,13 +179,11 @@ function App() {
 
       if (response.ok) {
         const newProjectDB = await response.json();
-        
         const newProjectFrontend: Project = {
           ...newProjectDB,
           id: newProjectDB._id, 
           isNew: true,
         };
-
         setProjects([newProjectFrontend, ...projects]);
         alert("Proje başarıyla oluşturuldu!");
       } else {
@@ -218,7 +216,7 @@ function App() {
             ...newUseCaseDB, 
             id: newUseCaseDB._id 
         };
-        
+        // Listeyi güncelle ki anında görebilelim
         setUseCases([newUseCaseFrontend, ...useCases]);
         alert("Use Case başarıyla oluşturuldu!");
       }
@@ -228,7 +226,7 @@ function App() {
     }
   };
 
-  // --- EKSİK OLAN PARÇA BURASIYDI: Etik Gerilim Ekleme ---
+  // --- TENSION EKLEME ---
   const handleCreateTension = async (tensionData: any) => {
     if (!selectedProject) return;
     
@@ -243,7 +241,6 @@ function App() {
       });
 
       if (response.ok) {
-        // Kayıt başarılı, ProjectDetail zaten kendi içinde fetch yapıp listeyi güncelleyecek
         console.log("Tension created successfully");
       } else {
         alert("Gerilim eklenirken hata oluştu.");
@@ -253,8 +250,6 @@ function App() {
       alert("Sunucuya bağlanılamadı.");
     }
   };
-
-  // --- RENDER ---
 
   if (!currentUser) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -282,7 +277,7 @@ function App() {
             onStartEvaluation={() => handleStartEvaluation(selectedProject)}
             onViewTension={handleViewTension}
             onViewOwner={handleViewOwner}
-            onCreateTension={handleCreateTension} // <-- BU BAĞLANTIYI YAPTIK
+            onCreateTension={handleCreateTension}
           />
         ) : null;
       case "tension-detail":
@@ -356,7 +351,7 @@ function App() {
               currentUser={currentUser}
               projects={projects}
               users={users}
-              useCases={useCases}
+              useCases={useCases} // <-- Bu prop Admin panelinin Use Case'leri görmesini sağlar
               onViewProject={handleViewProject}
               onStartEvaluation={handleStartEvaluation}
               onCreateProject={handleCreateProject}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Send, Plus, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { Project, User } from '../types';
 
@@ -44,7 +44,7 @@ const roleColors: Record<RoleKey, string> = {
 
 type QuestionBank = Record<StageKey, Question[]>;
 
-// Role-specific question banks
+// Role-specific question banks (Sabit Sorular)
 const questionBanks: Partial<Record<RoleKey, QuestionBank>> = {
   'ethical-expert': {
     'set-up': [
@@ -490,21 +490,74 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   ];
 
   const stages: { key: StageKey; label: string; icon: string }[] = [
-    { key: 'set-up', label: 'Set-up', icon: '🚀' },
+    { key: 'set-up', label: 'Set-up', icon: '📋' },
     { key: 'assess', label: 'Assess', icon: '🔍' },
-    { key: 'resolve', label: 'Resolve', icon: '📊' }
+    { key: 'resolve', label: 'Resolve', icon: '✅' }
   ];
 
-  const handleAnswerChange = (questionId: string, answer: any) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: answer }));
+  // --- MONGODB'DEN VERİLERİ ÇEKME (FETCH) ---
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        const url = `http://localhost:5000/api/evaluations?projectId=${project.id}&userId=${currentUser.id}&stage=${currentStage}`;
+        const res = await fetch(url);
+        
+        if (res.ok) {
+          const data = await res.json();
+          // Eğer veritabanında daha önce kaydedilmiş bir draft varsa state'e yükle
+          if (data && data.answers) {
+            setAnswers(data.answers);
+            if (data.riskLevel) setRiskLevel(data.riskLevel as RiskLevel);
+            setIsDraft(true); // Veritabanından geldiyse kaydedilmiştir
+            console.log("Draft loaded from MongoDB:", data);
+          } else {
+            // Kayıt yoksa form boş kalsın ama hata vermesin
+            console.log("No existing draft found, starting fresh.");
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load draft from MongoDB:", error);
+      }
+    };
+
+    loadDraft();
+  }, [project.id, currentUser.id, currentStage]);
+
+  // --- MONGODB'YE DRAFT KAYDETME ---
+  const handleSaveDraft = async () => {
+    try {
+      const payload = {
+        projectId: project.id,
+        userId: currentUser.id,
+        stage: currentStage,
+        answers: answers,
+        riskLevel: riskLevel,
+        status: 'draft'
+      };
+
+      const response = await fetch('http://localhost:5000/api/evaluations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        setIsDraft(true);
+        alert('✅ Draft saved successfully to MongoDB!');
+      } else {
+        const errData = await response.json();
+        alert('❌ Error saving draft: ' + (errData.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      alert('❌ Cannot connect to server. Check if backend is running.');
+    }
   };
 
-  const handleSaveDraft = () => {
-    setIsDraft(true);
-    alert('Draft saved successfully!');
-  };
-
-  const handleSubmitForm = () => {
+  // --- MONGODB'YE FİNAL GÖNDERİMİ ---
+  const handleSubmitForm = async () => {
     const requiredQuestions = currentQuestions.filter((q) => q.required);
     const missingAnswers = requiredQuestions.filter((q) => !answers[q.id]);
 
@@ -513,9 +566,37 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
       return;
     }
 
-    setIsDraft(false);
-    alert('Evaluation submitted successfully!');
-    onSubmit();
+    try {
+      const payload = {
+        projectId: project.id,
+        userId: currentUser.id,
+        stage: currentStage,
+        answers: answers,
+        riskLevel: riskLevel,
+        status: 'submitted'
+      };
+
+      const response = await fetch('http://localhost:5000/api/evaluations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        setIsDraft(false);
+        alert('🎉 Evaluation submitted successfully!');
+        onSubmit();
+      } else {
+        alert('Error submitting evaluation.');
+      }
+    } catch (error) {
+      alert('Connection failed during submission.');
+    }
+  };
+
+  const handleAnswerChange = (questionId: string, answer: any) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: answer }));
+    setIsDraft(false); // Değişiklik yapıldı, henüz kaydedilmedi
   };
 
   const addCustomQuestion = (question: Question) => {
@@ -830,7 +911,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
         {/* Action Buttons */}
         <div className="flex justify-between items-center mt-8 bg-white rounded-lg shadow-sm border p-6">
           <div className="text-sm text-gray-600">
-            {isDraft ? 'Draft saved automatically' : 'Evaluation submitted'}
+            {isDraft ? 'Draft saved' : 'Unsaved changes'}
           </div>
           <div className="flex space-x-3">
             <button
@@ -981,7 +1062,7 @@ function AddQuestionModal({
                         onClick={() => removeOption(index)}
                         className="text-red-600 hover:text-red-800"
                       >
-                        ×
+                        Sil
                       </button>
                     )}
                   </div>
