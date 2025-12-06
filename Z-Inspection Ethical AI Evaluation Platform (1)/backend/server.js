@@ -43,6 +43,16 @@ const ProjectSchema = new mongoose.Schema({
   progress: { type: Number, default: 0 },
   assignedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   useCase: { type: String },
+  inspectionContext: { 
+        requester: String,
+        inspectionReason: String,
+        relevantFor: String,
+        isMandatory: String,
+        conditionsToAnalyze: String,
+        resultsUsage: String,
+        resultsSharing: String,
+    },
+
   createdAt: { type: Date, default: Date.now }
 });
 const Project = mongoose.model('Project', ProjectSchema);
