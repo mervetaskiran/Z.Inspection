@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, Save, Send, Plus, AlertTriangle, CheckCircle, XCircle, 
-  Info, ChevronRight, ChevronLeft 
+  Info, ChevronRight, ChevronLeft, Loader2 
 } from 'lucide-react';
 
 import { Project, User, Question, StageKey, QuestionType } from '../types';
@@ -26,7 +26,11 @@ const roleColors: Record<string, string> = {
   'legal-expert': '#B45309'
 };
 
+const API_BASE_URL = 'http://localhost:5000/api'; // Backend adresi
+
 export function EvaluationForm({ project, currentUser, onBack, onSubmit }: EvaluationFormProps) {
+  // Projenin mevcut stage'ini başlangıç değeri olarak alabiliriz veya 'set-up' ile başlatabiliriz.
+  // Ancak kullanıcının kaldığı yerden devam etmesi için 'set-up' ile başlatıp veriyi çekmek daha güvenli.
   const [currentStage, setCurrentStage] = useState<StageKey>('set-up');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   
@@ -35,6 +39,8 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const [customQuestions, setCustomQuestions] = useState<Question[]>([]);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [isDraft, setIsDraft] = useState(true);
+  const [loading, setLoading] = useState(false); // Yükleniyor durumu
+  const [saving, setSaving] = useState(false);   // Kaydediliyor durumu
 
   const roleKey = currentUser.role.toLowerCase().replace(' ', '-') || 'admin';
   const roleColor = roleColors[roleKey] || '#3B82F6';
@@ -45,49 +51,103 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     return allQuestions.filter(q => q.stage === currentStage);
   }, [roleKey, currentStage, customQuestions]);
 
-  // Stage değişince index sıfırlanır
+  // --- 1. VERİ ÇEKME (FETCH DATA) ---
   useEffect(() => {
+    const fetchEvaluation = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/evaluations?projectId=${project._id}&userId=${currentUser._id}&stage=${currentStage}`);
+        if (response.ok) {
+          const data = await response.json();
+          // Eğer veritabanında cevaplar varsa state'e yükle
+          if (data.answers) setAnswers(data.answers);
+          if (data.riskLevel) setRiskLevel(data.riskLevel as RiskLevel);
+          // Status completed ise draft olmadığını belirt
+          if (data.status === 'completed') setIsDraft(false);
+        }
+      } catch (error) {
+        console.error("Veri çekme hatası:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEvaluation();
+    // Her stage değişiminde soru indexini sıfırla
     setCurrentQuestionIndex(0);
-  }, [currentStage]);
+  }, [currentStage, project._id, currentUser._id]);
 
   const activeQuestion = currentQuestions[currentQuestionIndex];
   const isLastQuestion = currentQuestions.length > 0 && currentQuestionIndex === currentQuestions.length - 1;
   const isFirstQuestion = currentQuestionIndex === 0;
 
-  // --- NAVIGATION LOGIC (GÜNCELLENDİ) ---
+  // --- 2. VERİ KAYDETME (SAVE DATA) ---
+  const saveEvaluation = async (status: 'draft' | 'completed' = 'draft') => {
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/evaluations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project._id,
+          userId: currentUser._id,
+          stage: currentStage,
+          answers: answers,
+          riskLevel: riskLevel,
+          status: status
+        })
+      });
 
-  // Geri Gitme Mantığı (Evrensel)
-  const handleBack = () => {
-    // 1. Eğer sorularda ilerlemişsek, bir önceki soruya git
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(prev => prev - 1);
-    } 
-    // 2. Eğer ilk sorudaysak ama Set-up aşamasında değilsek, önceki Stage'e git
-    else if (currentStage !== 'set-up') {
-      handleStageChange('prev');
+      if (!response.ok) throw new Error('Kaydetme başarısız');
+      
+      const savedData = await response.json();
+      console.log('Saved:', savedData);
+      
+      if (status === 'draft') {
+        alert('✅ Draft saved successfully to Database!');
+      }
+      return true;
+    } catch (error) {
+      console.error(error);
+      alert('❌ Error saving data. Please check your connection.');
+      return false;
+    } finally {
+      setSaving(false);
     }
-    // 3. Set-up'ın ilk sorusundaysak hiçbir şey yapma (disabled olacak)
   };
 
-  // İleri Gitme Mantığı (Evrensel)
-  const handleForward = () => {
+  // --- NAVIGATION LOGIC ---
+
+  const handleBack = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(prev => prev - 1);
+    } else if (currentStage !== 'set-up') {
+      handleStageChange('prev');
+    }
+  };
+
+  const handleForward = async () => {
     // Zorunluluk Kontrolü
     if (activeQuestion && activeQuestion.required && !answers[activeQuestion.id]) {
       alert("Please answer this required question before proceeding.");
       return;
     }
 
-    // 1. Soru varsa ve son soru değilse -> Sonraki Soru
+    // 1. Sonraki Soru
     if (currentQuestions.length > 0 && !isLastQuestion) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
-    // 2. Resolve aşamasındaysak ve son sorudaysak (veya soru yoksa) -> Submit
+    // 2. Submit (Resolve aşaması)
     else if (currentStage === 'resolve') {
       handleSubmitForm();
     }
-    // 3. Diğer durumlarda -> Sonraki Stage
+    // 3. Sonraki Stage
     else {
-      handleStageChange('next');
+      // Stage değiştirmeden önce kaydet
+      const success = await saveEvaluation('completed'); // O anki stage'i tamamlandı olarak işaretle
+      if (success) {
+        handleStageChange('next');
+      }
     }
   };
 
@@ -107,12 +167,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     setIsDraft(true);
   };
 
-  const handleSaveDraft = () => {
-    setIsDraft(true);
-    alert('Draft saved successfully!');
-  };
-
-  const handleSubmitForm = () => {
+  const handleSubmitForm = async () => {
     const requiredQuestions = currentQuestions.filter((q) => q.required);
     const missingAnswers = requiredQuestions.filter((q) => !answers[q.id]);
 
@@ -121,9 +176,12 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
       return;
     }
 
-    setIsDraft(false);
-    alert('Evaluation submitted successfully!');
-    onSubmit();
+    // Son kez kaydet ve status'u completed yap
+    const success = await saveEvaluation('completed');
+    if (success) {
+        alert('Evaluation submitted successfully and Project Status updated!');
+        onSubmit();
+    }
   };
 
   const addCustomQuestion = (question: Question) => {
@@ -144,13 +202,23 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     { key: 'resolve', label: 'Resolve', icon: '📊' }
   ];
 
-  // Helper text for the button
   const getNextButtonText = () => {
     if (currentQuestions.length === 0) return "Next Stage";
     if (!isLastQuestion) return "Next Question";
     if (currentStage === 'resolve') return "Submit Evaluation";
     return "Finish Stage";
   };
+
+  if (loading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-50">
+              <div className="flex flex-col items-center">
+                <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
+                <p className="text-gray-500">Loading evaluation data...</p>
+              </div>
+          </div>
+      )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -166,7 +234,18 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                 <h1 className="text-xl text-gray-900 font-bold tracking-tight">
                   {currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)} Evaluation
                 </h1>
-                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">{project.title}</p>
+                {/* PROJE DURUMUNU GÖSTERME DÜZELTMESİ */}
+                <div className="flex items-center gap-2 text-xs text-gray-500 font-medium uppercase tracking-wide">
+                    <span>Project: {project.title}</span>
+                    <span className="text-gray-300">|</span>
+                    <span className={`px-2 py-0.5 rounded ${
+                        project.stage === 'set-up' ? 'bg-blue-100 text-blue-700' :
+                        project.stage === 'assess' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-green-100 text-green-700'
+                    }`}>
+                        Global Stage: {project.stage}
+                    </span>
+                </div>
               </div>
             </div>
             
@@ -205,7 +284,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
              ))}
          </div>
          
-         {/* Resolve aşamasında 'Add Question' butonunu GİZLE */}
          {currentStage !== 'resolve' && (
             <button
               onClick={() => setShowAddQuestion(true)}
@@ -220,7 +298,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
             {activeQuestion ? (
                 <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1 animate-in fade-in slide-in-from-bottom-4 duration-300">
                     
-                    {/* Header: Question & Badges */}
                     <div className="p-8 border-b border-gray-100 bg-white">
                         <div className="flex items-center gap-3 mb-4">
                             <span className="px-3 py-1 bg-gray-100 text-gray-600 text-sm font-medium rounded-full">
@@ -247,9 +324,8 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                         )}
                     </div>
 
-                    {/* Answer Area */}
                     <div className="p-8 flex-1 bg-gray-50/30">
-                         {/* Select / Radio */}
+                        {/* INPUT TYPES (Same as before) */}
                          {(activeQuestion.type === 'select' || activeQuestion.type === 'multiple-choice' || activeQuestion.type === 'radio') && (
                             <div className="space-y-3 max-w-2xl">
                                 {activeQuestion.options?.map((option) => (
@@ -279,7 +355,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                             </div>
                         )}
 
-                        {/* Text Area */}
                         {activeQuestion.type === 'text' && (
                             <div className="relative max-w-3xl">
                                 <textarea
@@ -292,7 +367,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                             </div>
                         )}
 
-                        {/* Likert Scale */}
                         {(activeQuestion.type === 'likert' || activeQuestion.type === 'rating') && (
                              <div className="py-4 max-w-2xl">
                                 <div className="flex justify-between text-sm font-semibold text-gray-500 mb-4 px-2 uppercase tracking-wide">
@@ -322,7 +396,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                             </div>
                         )}
                         
-                        {/* Checkbox */}
                          {activeQuestion.type === 'checkbox' && (
                             <div className="space-y-3 max-w-2xl">
                                 {activeQuestion.options?.map((option) => (
@@ -358,7 +431,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                     </div>
                 </div>
             ) : (
-                /* DURUM 2: SORU YOKSA - Boş Ekran */
                  <div className="text-center py-32 bg-white rounded-3xl shadow-sm border border-dashed border-gray-200 flex flex-col items-center justify-center">
                     <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-6 ring-8 ring-gray-50/50">
                         <Info className="w-12 h-12 text-gray-300" />
@@ -380,7 +452,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                         </>
                     )}
                     
-                    {/* Resolve değilse soru ekleme butonu */}
                     {currentStage !== 'resolve' && (
                         <button
                             onClick={() => setShowAddQuestion(true)}
@@ -392,7 +463,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                 </div>
             )}
 
-             {/* Risk Assessment Section (Resolve aşamasında her zaman görünür) */}
              {currentStage === 'resolve' && (
                 <div className="mt-8 bg-white rounded-3xl shadow-sm border border-gray-200 p-8 animate-in slide-in-from-bottom-2">
                     <div className="flex items-center gap-3 mb-6">
@@ -434,10 +504,8 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
             )}
         </div>
 
-        {/* --- GLOBAL FOOTER NAVIGATION (Her Zaman En Altta Görünür) --- */}
         <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 mt-8 flex justify-between items-center z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             
-            {/* 1. PREVIOUS BUTTON (Sadece en baştaki durumda kilitli) */}
             <button
                 onClick={handleBack}
                 disabled={currentStage === 'set-up' && isFirstQuestion}
@@ -452,15 +520,17 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
 
             <div className="flex items-center gap-4">
                 <button 
-                    onClick={handleSaveDraft} 
+                    onClick={() => saveEvaluation('draft')} 
+                    disabled={saving}
                     className="px-6 py-3 bg-indigo-50 border-2 border-indigo-100 text-indigo-600 font-semibold rounded-xl hover:bg-indigo-100 hover:border-indigo-200 transition-all flex items-center"
                 >
-                    <Save className="w-5 h-5 mr-2" /> Save Draft
+                    {saving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
+                    {saving ? 'Saving...' : 'Save Draft'}
                 </button>
 
-                {/* 2. NEXT / SUBMIT BUTTON (Her zaman Mavi/Yeşil) */}
                 <button
                     onClick={handleForward}
+                    disabled={saving}
                     className={`flex items-center px-8 py-3 text-white rounded-xl font-bold shadow-md transition-all hover:-translate-y-0.5 ${
                         currentStage === 'resolve' 
                             ? 'bg-green-600 hover:bg-green-700' 
@@ -485,7 +555,9 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   );
 }
 
-// --- MODAL ---
+// ... AddQuestionModal kodunu aynen buraya yapıştır ...
+// Not: AddQuestionModal kodunda değişiklik yapmadık, önceki dosyadaki gibi kalabilir.
+// Sadece EvaluationForm içindeki AddQuestionModal componentini çağırmak için gerekli.
 interface AddQuestionModalProps {
   currentStage: StageKey;
   onClose: () => void;
