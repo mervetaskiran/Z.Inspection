@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Send, Plus, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
-import { Project, User } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  ArrowLeft, Save, Send, Plus, AlertTriangle, CheckCircle, XCircle, 
+  Info, ChevronRight, ChevronLeft 
+} from 'lucide-react';
+
+import { Project, User, Question, StageKey, QuestionType } from '../types';
+import { getQuestionsByRole } from '../data/questions'; 
 
 interface EvaluationFormProps {
   project: Project;
@@ -9,31 +14,10 @@ interface EvaluationFormProps {
   onSubmit: () => void;
 }
 
-type QuestionType = 'multiple-choice' | 'checkbox' | 'text' | 'likert';
-type StageKey = 'set-up' | 'assess' | 'resolve';
 type RiskLevel = 'low' | 'medium' | 'high';
 
-interface Question {
-  id: string;
-  stage: StageKey;
-  text: string;
-  type: QuestionType;
-  options?: string[];
-  answer?: any;
-  required?: boolean;
-}
-
-type RoleKey =
-  | 'admin'
-  | 'ethical-expert'
-  | 'medical-expert'
-  | 'use-case-owner'
-  | 'education-expert'
-  | 'technical-expert'
-  | 'legal-expert';
-
-const roleColors: Record<RoleKey, string> = {
-  admin: '#1F2937',
+const roleColors: Record<string, string> = {
+  'admin': '#1F2937',
   'ethical-expert': '#1E40AF',
   'medical-expert': '#9D174D',
   'use-case-owner': '#065F46',
@@ -42,561 +26,104 @@ const roleColors: Record<RoleKey, string> = {
   'legal-expert': '#B45309'
 };
 
-type QuestionBank = Record<StageKey, Question[]>;
-
-// Role-specific question banks (Sabit Sorular)
-const questionBanks: Partial<Record<RoleKey, QuestionBank>> = {
-  'ethical-expert': {
-    'set-up': [
-      {
-        id: 'legal_1',
-        stage: 'set-up',
-        text: 'Does the AI system comply with relevant data protection regulations (GDPR, CCPA)?',
-        type: 'multiple-choice',
-        options: ['Fully compliant', 'Partially compliant', 'Non-compliant', 'Unclear'],
-        required: true
-      },
-      {
-        id: 'legal_2',
-        stage: 'set-up',
-        text: 'Are there clear terms of service and privacy policies for users?',
-        type: 'multiple-choice',
-        options: ['Yes, comprehensive', 'Yes, but incomplete', 'No', 'Not applicable'],
-        required: true
-      },
-      {
-        id: 'legal_3',
-        stage: 'set-up',
-        text: 'Identify potential legal risks and liabilities.',
-        type: 'text',
-        required: true
-      }
-    ],
-    assess: [
-      {
-        id: 'legal_4',
-        stage: 'assess',
-        text: "How would you rate the system's compliance with anti-discrimination laws?",
-        type: 'likert',
-        options: ['Very Poor', 'Poor', 'Fair', 'Good', 'Excellent'],
-        required: true
-      },
-      {
-        id: 'legal_5',
-        stage: 'assess',
-        text: 'Are consent mechanisms appropriately implemented?',
-        type: 'multiple-choice',
-        options: ['Yes, fully', 'Yes, partially', 'No', 'Not required'],
-        required: true
-      }
-    ],
-    resolve: [
-      {
-        id: 'legal_6',
-        stage: 'resolve',
-        text: 'What is your overall legal risk assessment?',
-        type: 'multiple-choice',
-        options: ['Acceptable risk', 'Manageable with mitigation', 'High risk - requires changes', 'Unacceptable risk'],
-        required: true
-      },
-      {
-        id: 'legal_7',
-        stage: 'resolve',
-        text: 'Provide final legal recommendations and required actions.',
-        type: 'text',
-        required: true
-      }
-    ]
-  },
-  'use-case-owner': {
-    'set-up': [
-      {
-        id: 'tech_1',
-        stage: 'set-up',
-        text: 'What type of machine learning model is being used?',
-        type: 'multiple-choice',
-        options: ['Supervised Learning', 'Unsupervised Learning', 'Reinforcement Learning', 'Deep Learning', 'Other'],
-        required: true
-      },
-      {
-        id: 'tech_2',
-        stage: 'set-up',
-        text: 'Are there adequate security measures in place?',
-        type: 'checkbox',
-        options: ['Data encryption', 'Access controls', 'Audit logging', 'Vulnerability testing', 'None implemented'],
-        required: true
-      },
-      {
-        id: 'tech_3',
-        stage: 'set-up',
-        text: 'Describe the system architecture and data flow.',
-        type: 'text',
-        required: true
-      }
-    ],
-    assess: [
-      {
-        id: 'tech_4',
-        stage: 'assess',
-        text: 'How would you rate the algorithmic transparency?',
-        type: 'likert',
-        options: ['Very Poor', 'Poor', 'Fair', 'Good', 'Excellent'],
-        required: true
-      },
-      {
-        id: 'tech_5',
-        stage: 'assess',
-        text: 'Are bias detection and mitigation techniques implemented?',
-        type: 'multiple-choice',
-        options: ['Yes, comprehensive', 'Yes, basic', 'No', 'In development'],
-        required: true
-      }
-    ],
-    resolve: [
-      {
-        id: 'tech_6',
-        stage: 'resolve',
-        text: 'What is your overall technical risk assessment?',
-        type: 'multiple-choice',
-        options: [
-          'Low technical risk',
-          'Moderate risk with recommendations',
-          'High risk - significant changes needed',
-          'Critical issues found'
-        ],
-        required: true
-      },
-      {
-        id: 'tech_7',
-        stage: 'resolve',
-        text: 'Provide final technical recommendations and implementation requirements.',
-        type: 'text',
-        required: true
-      }
-    ]
-  },
-  'medical-expert': {
-    'set-up': [
-      {
-        id: 'med_1',
-        stage: 'set-up',
-        text: 'Does the AI system meet medical device regulatory requirements?',
-        type: 'multiple-choice',
-        options: ['FDA approved', 'CE marked', 'In approval process', 'Not required', 'Non-compliant'],
-        required: true
-      },
-      {
-        id: 'med_2',
-        stage: 'set-up',
-        text: 'Are clinical validation studies available?',
-        type: 'multiple-choice',
-        options: ['Yes, comprehensive', 'Yes, limited', 'In progress', 'No'],
-        required: true
-      },
-      {
-        id: 'med_3',
-        stage: 'set-up',
-        text: 'Describe potential patient safety risks.',
-        type: 'text',
-        required: true
-      }
-    ],
-    assess: [
-      {
-        id: 'med_4',
-        stage: 'assess',
-        text: 'How would you rate the clinical utility of the AI system?',
-        type: 'likert',
-        options: ['Very Low', 'Low', 'Moderate', 'High', 'Very High'],
-        required: true
-      },
-      {
-        id: 'med_5',
-        stage: 'assess',
-        text: 'Are there adequate safeguards for patient data?',
-        type: 'checkbox',
-        options: ['De-identification', 'Encryption', 'Access controls', 'Audit trails', 'None'],
-        required: true
-      }
-    ],
-    resolve: [
-      {
-        id: 'med_6',
-        stage: 'resolve',
-        text: 'What is your overall clinical risk assessment?',
-        type: 'multiple-choice',
-        options: [
-          'Safe for clinical use',
-          'Safe with monitoring',
-          'Requires additional safeguards',
-          'Not recommended for clinical use'
-        ],
-        required: true
-      },
-      {
-        id: 'med_7',
-        stage: 'resolve',
-        text: 'Provide final medical recommendations and clinical implementation guidelines.',
-        type: 'text',
-        required: true
-      }
-    ]
-  },
-  'education-expert': {
-    'set-up': [
-      {
-        id: 'edu_1',
-        stage: 'set-up',
-        text: 'Does the AI system support inclusive learning for diverse student populations?',
-        type: 'multiple-choice',
-        options: ['Fully inclusive', 'Partially inclusive', 'Limited support', 'Not inclusive'],
-        required: true
-      },
-      {
-        id: 'edu_2',
-        stage: 'set-up',
-        text: 'Are there adequate safeguards for student data privacy?',
-        type: 'checkbox',
-        options: ['FERPA compliance', 'Age-appropriate consent', 'Data anonymization', 'Parental controls', 'None implemented'],
-        required: true
-      },
-      {
-        id: 'edu_3',
-        stage: 'set-up',
-        text: 'Describe the pedagogical framework and learning outcomes.',
-        type: 'text',
-        required: true
-      }
-    ],
-    assess: [
-      {
-        id: 'edu_4',
-        stage: 'assess',
-        text: 'How would you rate the educational effectiveness of the AI system?',
-        type: 'likert',
-        options: ['Very Low', 'Low', 'Moderate', 'High', 'Very High'],
-        required: true
-      },
-      {
-        id: 'edu_5',
-        stage: 'assess',
-        text: 'Does the system promote critical thinking and avoid bias in educational content?',
-        type: 'multiple-choice',
-        options: ['Yes, effectively', 'Somewhat', 'No', 'Needs improvement'],
-        required: true
-      }
-    ],
-    resolve: [
-      {
-        id: 'edu_6',
-        stage: 'resolve',
-        text: 'What is your overall educational suitability assessment?',
-        type: 'multiple-choice',
-        options: [
-          'Highly suitable for educational use',
-          'Suitable with modifications',
-          'Limited educational value',
-          'Not recommended for educational settings'
-        ],
-        required: true
-      },
-      {
-        id: 'edu_7',
-        stage: 'resolve',
-        text: 'Provide final educational recommendations and implementation guidelines.',
-        type: 'text',
-        required: true
-      }
-    ]
-  },
-  'technical-expert': {
-    'set-up': [
-      {
-        id: 'tech_sys_1',
-        stage: 'set-up',
-        text: 'What is the architecture of the AI system?',
-        type: 'multiple-choice',
-        options: ['Centralized', 'Distributed', 'Cloud-based', 'Hybrid', 'Edge computing'],
-        required: true
-      },
-      {
-        id: 'tech_sys_2',
-        stage: 'set-up',
-        text: 'What security measures are implemented?',
-        type: 'checkbox',
-        options: [
-          'End-to-end encryption',
-          'Multi-factor authentication',
-          'Intrusion detection',
-          'Regular security audits',
-          'Penetration testing',
-          'None'
-        ],
-        required: true
-      },
-      {
-        id: 'tech_sys_3',
-        stage: 'set-up',
-        text: 'Describe the data pipeline, model architecture, and infrastructure.',
-        type: 'text',
-        required: true
-      }
-    ],
-    assess: [
-      {
-        id: 'tech_sys_4',
-        stage: 'assess',
-        text: "How would you rate the system's robustness and reliability?",
-        type: 'likert',
-        options: ['Very Poor', 'Poor', 'Fair', 'Good', 'Excellent'],
-        required: true
-      },
-      {
-        id: 'tech_sys_5',
-        stage: 'assess',
-        text: 'Are there adequate monitoring and logging mechanisms?',
-        type: 'multiple-choice',
-        options: ['Comprehensive monitoring', 'Basic monitoring', 'Minimal monitoring', 'No monitoring'],
-        required: true
-      },
-      {
-        id: 'tech_sys_6',
-        stage: 'assess',
-        text: "What is the model's performance and accuracy level?",
-        type: 'multiple-choice',
-        options: [
-          'Excellent (>95%)',
-          'Good (85-95%)',
-          'Acceptable (75-85%)',
-          'Poor (<75%)',
-          'Not measured'
-        ],
-        required: true
-      }
-    ],
-    resolve: [
-      {
-        id: 'tech_sys_7',
-        stage: 'resolve',
-        text: 'What is your overall technical assessment?',
-        type: 'multiple-choice',
-        options: ['Production ready', 'Ready with minor fixes', 'Needs significant improvements', 'Not technically viable'],
-        required: true
-      },
-      {
-        id: 'tech_sys_8',
-        stage: 'resolve',
-        text: 'Provide final technical recommendations, scalability considerations, and deployment requirements.',
-        type: 'text',
-        required: true
-      }
-    ]
-  },
-  'legal-expert': {
-    'set-up': [
-      {
-        id: 'legal_sys_1',
-        stage: 'set-up',
-        text: 'Does the AI system comply with relevant regulatory frameworks?',
-        type: 'checkbox',
-        options: ['GDPR', 'CCPA', 'AI Act (EU)', 'HIPAA', 'Industry-specific regulations', 'None applicable'],
-        required: true
-      },
-      {
-        id: 'legal_sys_2',
-        stage: 'set-up',
-        text: 'Are there clear liability and accountability frameworks in place?',
-        type: 'multiple-choice',
-        options: ['Comprehensive framework', 'Partial framework', 'Under development', 'No framework'],
-        required: true
-      },
-      {
-        id: 'legal_sys_3',
-        stage: 'set-up',
-        text: 'Identify potential legal risks, regulatory compliance gaps, and liability concerns.',
-        type: 'text',
-        required: true
-      }
-    ],
-    assess: [
-      {
-        id: 'legal_sys_4',
-        stage: 'assess',
-        text: 'How would you rate the data protection and privacy compliance?',
-        type: 'likert',
-        options: ['Very Poor', 'Poor', 'Fair', 'Good', 'Excellent'],
-        required: true
-      },
-      {
-        id: 'legal_sys_5',
-        stage: 'assess',
-        text: 'Are intellectual property rights clearly defined and protected?',
-        type: 'multiple-choice',
-        options: ['Fully protected', 'Partially protected', 'Unclear', 'Not protected'],
-        required: true
-      },
-      {
-        id: 'legal_sys_6',
-        stage: 'assess',
-        text: 'Does the system meet anti-discrimination and fairness requirements?',
-        type: 'multiple-choice',
-        options: ['Fully compliant', 'Mostly compliant', 'Partially compliant', 'Non-compliant'],
-        required: true
-      }
-    ],
-    resolve: [
-      {
-        id: 'legal_sys_7',
-        stage: 'resolve',
-        text: 'What is your overall legal risk assessment?',
-        type: 'multiple-choice',
-        options: ['Low legal risk', 'Acceptable risk with safeguards', 'High risk - requires legal review', 'Unacceptable legal risk'],
-        required: true
-      },
-      {
-        id: 'legal_sys_8',
-        stage: 'resolve',
-        text: 'Provide final legal recommendations, compliance requirements, and risk mitigation strategies.',
-        type: 'text',
-        required: true
-      }
-    ]
-  }
-};
-
-const emptyQuestionsByStage: QuestionBank = {
-  'set-up': [],
-  assess: [],
-  resolve: []
-};
-
 export function EvaluationForm({ project, currentUser, onBack, onSubmit }: EvaluationFormProps) {
   const [currentStage, setCurrentStage] = useState<StageKey>('set-up');
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('medium');
   const [customQuestions, setCustomQuestions] = useState<Question[]>([]);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [isDraft, setIsDraft] = useState(true);
 
-  const roleKey = (currentUser.role as RoleKey) || 'admin';
-  const roleColor = roleColors[roleKey];
+  const roleKey = currentUser.role.toLowerCase().replace(' ', '-') || 'admin';
+  const roleColor = roleColors[roleKey] || '#3B82F6';
 
-  const userQuestions: QuestionBank =
-    questionBanks[roleKey] ?? emptyQuestionsByStage;
+  const currentQuestions = useMemo(() => {
+    const roleQuestions = getQuestionsByRole(roleKey);
+    const allQuestions = [...roleQuestions, ...customQuestions];
+    return allQuestions.filter(q => q.stage === currentStage);
+  }, [roleKey, currentStage, customQuestions]);
 
-  const currentQuestions: Question[] = [
-    ...(userQuestions[currentStage] ?? []),
-    ...customQuestions.filter((q) => q.stage === currentStage)
-  ];
-
-  const stages: { key: StageKey; label: string; icon: string }[] = [
-    { key: 'set-up', label: 'Set-up', icon: '📋' },
-    { key: 'assess', label: 'Assess', icon: '🔍' },
-    { key: 'resolve', label: 'Resolve', icon: '✅' }
-  ];
-
-  // --- MONGODB'DEN VERİLERİ ÇEKME (FETCH) ---
+  // Stage değişince index sıfırlanır
   useEffect(() => {
-    const loadDraft = async () => {
-      try {
-        const url = `http://localhost:5000/api/evaluations?projectId=${project.id}&userId=${currentUser.id}&stage=${currentStage}`;
-        const res = await fetch(url);
-        
-        if (res.ok) {
-          const data = await res.json();
-          // Eğer veritabanında daha önce kaydedilmiş bir draft varsa state'e yükle
-          if (data && data.answers) {
-            setAnswers(data.answers);
-            if (data.riskLevel) setRiskLevel(data.riskLevel as RiskLevel);
-            setIsDraft(true); // Veritabanından geldiyse kaydedilmiştir
-            console.log("Draft loaded from MongoDB:", data);
-          } else {
-            // Kayıt yoksa form boş kalsın ama hata vermesin
-            console.log("No existing draft found, starting fresh.");
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load draft from MongoDB:", error);
-      }
-    };
+    setCurrentQuestionIndex(0);
+  }, [currentStage]);
 
-    loadDraft();
-  }, [project.id, currentUser.id, currentStage]);
+  const activeQuestion = currentQuestions[currentQuestionIndex];
+  const isLastQuestion = currentQuestions.length > 0 && currentQuestionIndex === currentQuestions.length - 1;
+  const isFirstQuestion = currentQuestionIndex === 0;
 
-  // --- MONGODB'YE DRAFT KAYDETME ---
-  const handleSaveDraft = async () => {
-    try {
-      const payload = {
-        projectId: project.id,
-        userId: currentUser.id,
-        stage: currentStage,
-        answers: answers,
-        riskLevel: riskLevel,
-        status: 'draft'
-      };
+  // --- NAVIGATION LOGIC (GÜNCELLENDİ) ---
 
-      const response = await fetch('http://localhost:5000/api/evaluations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        setIsDraft(true);
-        alert('✅ Draft saved successfully to MongoDB!');
-      } else {
-        const errData = await response.json();
-        alert('❌ Error saving draft: ' + (errData.error || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Save error:', error);
-      alert('❌ Cannot connect to server. Check if backend is running.');
+  // Geri Gitme Mantığı (Evrensel)
+  const handleBack = () => {
+    // 1. Eğer sorularda ilerlemişsek, bir önceki soruya git
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(prev => prev - 1);
+    } 
+    // 2. Eğer ilk sorudaysak ama Set-up aşamasında değilsek, önceki Stage'e git
+    else if (currentStage !== 'set-up') {
+      handleStageChange('prev');
     }
+    // 3. Set-up'ın ilk sorusundaysak hiçbir şey yapma (disabled olacak)
   };
 
-  // --- MONGODB'YE FİNAL GÖNDERİMİ ---
-  const handleSubmitForm = async () => {
-    const requiredQuestions = currentQuestions.filter((q) => q.required);
-    const missingAnswers = requiredQuestions.filter((q) => !answers[q.id]);
-
-    if (missingAnswers.length > 0) {
-      alert('Please answer all required questions before submitting.');
+  // İleri Gitme Mantığı (Evrensel)
+  const handleForward = () => {
+    // Zorunluluk Kontrolü
+    if (activeQuestion && activeQuestion.required && !answers[activeQuestion.id]) {
+      alert("Please answer this required question before proceeding.");
       return;
     }
 
-    try {
-      const payload = {
-        projectId: project.id,
-        userId: currentUser.id,
-        stage: currentStage,
-        answers: answers,
-        riskLevel: riskLevel,
-        status: 'submitted'
-      };
+    // 1. Soru varsa ve son soru değilse -> Sonraki Soru
+    if (currentQuestions.length > 0 && !isLastQuestion) {
+      setCurrentQuestionIndex(prev => prev + 1);
+    }
+    // 2. Resolve aşamasındaysak ve son sorudaysak (veya soru yoksa) -> Submit
+    else if (currentStage === 'resolve') {
+      handleSubmitForm();
+    }
+    // 3. Diğer durumlarda -> Sonraki Stage
+    else {
+      handleStageChange('next');
+    }
+  };
 
-      const response = await fetch('http://localhost:5000/api/evaluations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+  const handleStageChange = (direction: 'next' | 'prev') => {
+    const stageOrder: StageKey[] = ['set-up', 'assess', 'resolve'];
+    const currentIndex = stageOrder.indexOf(currentStage);
 
-      if (response.ok) {
-        setIsDraft(false);
-        alert('🎉 Evaluation submitted successfully!');
-        onSubmit();
-      } else {
-        alert('Error submitting evaluation.');
-      }
-    } catch (error) {
-      alert('Connection failed during submission.');
+    if (direction === 'next' && currentIndex < stageOrder.length - 1) {
+      setCurrentStage(stageOrder[currentIndex + 1]);
+    } else if (direction === 'prev' && currentIndex > 0) {
+      setCurrentStage(stageOrder[currentIndex - 1]);
     }
   };
 
   const handleAnswerChange = (questionId: string, answer: any) => {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }));
-    setIsDraft(false); // Değişiklik yapıldı, henüz kaydedilmedi
+    setIsDraft(true);
+  };
+
+  const handleSaveDraft = () => {
+    setIsDraft(true);
+    alert('Draft saved successfully!');
+  };
+
+  const handleSubmitForm = () => {
+    const requiredQuestions = currentQuestions.filter((q) => q.required);
+    const missingAnswers = requiredQuestions.filter((q) => !answers[q.id]);
+
+    if (missingAnswers.length > 0) {
+      alert(`Please answer all required questions (${missingAnswers.length} missing).`);
+      return;
+    }
+
+    setIsDraft(false);
+    alert('Evaluation submitted successfully!');
+    onSubmit();
   };
 
   const addCustomQuestion = (question: Question) => {
@@ -607,49 +134,51 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   };
 
   const getCompletionPercentage = () => {
-    const totalQuestions = currentQuestions.length;
-    const answeredQuestions = currentQuestions.filter((q) => !!answers[q.id])
-      .length;
-    return totalQuestions > 0
-      ? Math.round((answeredQuestions / totalQuestions) * 100)
-      : 0;
+    if (currentQuestions.length === 0) return 0;
+    return Math.round(((currentQuestionIndex + 1) / currentQuestions.length) * 100);
+  };
+
+  const stages: { key: StageKey; label: string; icon: string }[] = [
+    { key: 'set-up', label: 'Set-up', icon: '🚀' },
+    { key: 'assess', label: 'Assess', icon: '🔍' },
+    { key: 'resolve', label: 'Resolve', icon: '📊' }
+  ];
+
+  // Helper text for the button
+  const getNextButtonText = () => {
+    if (currentQuestions.length === 0) return "Next Stage";
+    if (!isLastQuestion) return "Next Question";
+    if (currentStage === 'resolve') return "Submit Evaluation";
+    return "Finish Stage";
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
+      <div className="bg-white shadow-sm border-b sticky top-0 z-20">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <button
-                onClick={onBack}
-                className="flex items-center text-gray-600 hover:text-gray-800"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Back
+              <button onClick={onBack} className="flex items-center text-gray-600 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg text-sm font-medium">
+                <ArrowLeft className="h-4 w-4 mr-1" /> Back
               </button>
               <div>
-                <h1 className="text-xl text-gray-900">
-                  {currentUser.role.charAt(0).toUpperCase() +
-                    currentUser.role.slice(1)}{' '}
-                  Evaluation
+                <h1 className="text-xl text-gray-900 font-bold tracking-tight">
+                  {currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)} Evaluation
                 </h1>
-                <p className="text-gray-600">{project.title}</p>
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">{project.title}</p>
               </div>
             </div>
-
-            <div className="flex items-center space-x-3">
-              <div className="text-sm text-gray-600">
-                Progress: {getCompletionPercentage()}%
+            
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <p className="text-xs text-gray-500 font-medium">Progress</p>
+                <p className="text-sm font-bold text-gray-900">{getCompletionPercentage()}%</p>
               </div>
-              <div className="w-24 bg-gray-200 rounded-full h-2">
+              <div className="w-32 bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200">
                 <div
-                  className="h-2 rounded-full transition-all"
-                  style={{
-                    width: `${getCompletionPercentage()}%`,
-                    backgroundColor: roleColor
-                  }}
+                  className="h-full rounded-full transition-all duration-500 ease-out shadow-sm"
+                  style={{ width: `${getCompletionPercentage()}%`, backgroundColor: roleColor }}
                 />
               </div>
             </div>
@@ -657,283 +186,294 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
         </div>
       </div>
 
-      <div className="px-6 py-6">
-        {/* Stage Navigation */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <h2 className="text-lg mb-4 text-gray-900">Evaluation Stages</h2>
-          <div className="flex space-x-4">
-            {stages.map((stage) => (
-              <button
-                key={stage.key}
-                onClick={() => setCurrentStage(stage.key)}
-                className={`px-4 py-2 rounded-lg text-sm transition-colors flex items-center ${
-                  currentStage === stage.key
-                    ? 'text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                style={{
-                  backgroundColor:
-                    currentStage === stage.key ? roleColor : undefined
-                }}
-              >
-                <span className="mr-2">{stage.icon}</span>
-                {stage.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Current Stage Info */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg text-gray-900">
-              {stages.find((s) => s.key === currentStage)?.label} Stage
-            </h3>
+      <div className="flex-1 px-4 py-8 max-w-5xl mx-auto w-full flex flex-col">
+        {/* Stage Navigation Tabs */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-2 mb-8 flex justify-between items-center sticky top-24 z-10 backdrop-blur-sm bg-white/90">
+          <div className="flex space-x-1 bg-gray-100/50 p-1 rounded-xl">
+             {stages.map((stage) => (
+             <button
+                 key={stage.key}
+                 onClick={() => setCurrentStage(stage.key)}
+                 className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center ${
+                 currentStage === stage.key
+                     ? 'bg-white text-gray-900 shadow-md ring-1 ring-black/5 transform scale-100'
+                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                 }`}
+             >
+                 <span className="mr-2 text-lg">{stage.icon}</span> {stage.label}
+             </button>
+             ))}
+         </div>
+         
+         {/* Resolve aşamasında 'Add Question' butonunu GİZLE */}
+         {currentStage !== 'resolve' && (
             <button
               onClick={() => setShowAddQuestion(true)}
-              className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"
+              className="px-4 py-2 text-sm font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-all flex items-center shadow-sm"
             >
-              <Plus className="h-3 w-3 mr-1" />
-              Add Question
+              <Plus className="h-4 w-4 mr-2" /> Add Question
             </button>
-          </div>
+         )}
+       </div>
 
-          <div className="text-sm text-gray-600">
-            {currentStage === 'set-up' &&
-              'Initial assessment of the AI system, its purpose, and potential risks.'}
-            {currentStage === 'assess' &&
-              'Detailed evaluation of ethical considerations and technical implementation.'}
-            {currentStage === 'resolve' &&
-              'Final analysis, recommendations, and risk assessment summary.'}
-          </div>
-        </div>
+        <div className="flex-1 flex flex-col min-h-[500px]">
+            {activeQuestion ? (
+                <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    
+                    {/* Header: Question & Badges */}
+                    <div className="p-8 border-b border-gray-100 bg-white">
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="px-3 py-1 bg-gray-100 text-gray-600 text-sm font-medium rounded-full">
+                                Question {currentQuestionIndex + 1} of {currentQuestions.length}
+                            </span>
+                            {activeQuestion.required && (
+                                <span className="px-3 py-1 bg-red-50 text-red-600 text-sm font-medium rounded-full border border-red-100">
+                                    Required
+                                </span>
+                            )}
+                        </div>
+                        
+                        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
+                            {activeQuestion.text}
+                        </h2>
 
-        {/* Questions */}
-        <div className="bg-white rounded-lg shadow-sm border">
-          <div className="p-6 border-b">
-            <h3 className="text-lg text-gray-900">
-              {currentUser.role.charAt(0).toUpperCase() +
-                currentUser.role.slice(1)}{' '}
-              Questions
-            </h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Answer questions from your professional expertise perspective
-            </p>
-          </div>
-
-          <div className="p-6 space-y-8">
-            {currentQuestions.map((question, index) => (
-              <div
-                key={question.id}
-                className="border-l-4 border-gray-200 pl-4"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center mb-2">
-                      <span className="text-sm text-gray-500 mr-2">
-                        Q{index + 1}
-                      </span>
-                      {question.required && (
-                        <span className="text-red-500 text-xs">*</span>
-                      )}
+                        {activeQuestion.description && (
+                            <div className="flex items-start gap-3 mt-4 bg-blue-50/50 p-4 rounded-2xl border border-blue-100/50">
+                                <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                                <p className="text-blue-900 text-base leading-relaxed">
+                                    {activeQuestion.description}
+                                </p>
+                            </div>
+                        )}
                     </div>
-                    <h4 className="text-base text-gray-900 mb-3">
-                      {question.text}
-                    </h4>
-                  </div>
+
+                    {/* Answer Area */}
+                    <div className="p-8 flex-1 bg-gray-50/30">
+                         {/* Select / Radio */}
+                         {(activeQuestion.type === 'select' || activeQuestion.type === 'multiple-choice' || activeQuestion.type === 'radio') && (
+                            <div className="space-y-3 max-w-2xl">
+                                {activeQuestion.options?.map((option) => (
+                                <label key={option} className={`group flex items-center p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 ${
+                                    answers[activeQuestion.id] === option 
+                                    ? 'border-blue-600 bg-blue-50/50 shadow-sm' 
+                                    : 'border-gray-200 hover:border-blue-300 hover:bg-white'
+                                }`}>
+                                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 transition-colors ${
+                                         answers[activeQuestion.id] === option ? 'border-blue-600 bg-blue-600' : 'border-gray-300 group-hover:border-blue-400'
+                                    }`}>
+                                        <div className="w-2 h-2 rounded-full bg-white" />
+                                    </div>
+                                    <input
+                                    type="radio"
+                                    name={activeQuestion.id}
+                                    value={option}
+                                    checked={answers[activeQuestion.id] === option}
+                                    onChange={(e) => handleAnswerChange(activeQuestion.id, e.target.value)}
+                                    className="hidden"
+                                    />
+                                    <span className={`text-lg font-medium transition-colors ${
+                                        answers[activeQuestion.id] === option ? 'text-blue-900' : 'text-gray-700'
+                                    }`}>{option}</span>
+                                </label>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Text Area */}
+                        {activeQuestion.type === 'text' && (
+                            <div className="relative max-w-3xl">
+                                <textarea
+                                    value={answers[activeQuestion.id] || ''}
+                                    onChange={(e) => handleAnswerChange(activeQuestion.id, e.target.value)}
+                                    rows={6}
+                                    className="w-full px-5 py-4 text-lg text-gray-800 border-2 border-gray-200 rounded-2xl focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all resize-none placeholder-gray-400 bg-white"
+                                    placeholder="Type your assessment here..."
+                                />
+                            </div>
+                        )}
+
+                        {/* Likert Scale */}
+                        {(activeQuestion.type === 'likert' || activeQuestion.type === 'rating') && (
+                             <div className="py-4 max-w-2xl">
+                                <div className="flex justify-between text-sm font-semibold text-gray-500 mb-4 px-2 uppercase tracking-wide">
+                                    <span>{activeQuestion.min || 'Low'}</span>
+                                    <span>{activeQuestion.max || 'High'}</span>
+                                </div>
+                                <div className="grid grid-cols-5 gap-3">
+                                    {(activeQuestion.options && activeQuestion.options.length > 0 ? activeQuestion.options : ['1', '2', '3', '4', '5']).map((option, idx) => {
+                                        const val = idx + 1;
+                                        const isSelected = answers[activeQuestion.id] === val || answers[activeQuestion.id] === option;
+                                        return (
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() => handleAnswerChange(activeQuestion.id, option)}
+                                                className={`aspect-square rounded-2xl text-xl font-bold transition-all duration-200 flex items-center justify-center ${
+                                                    isSelected
+                                                    ? 'bg-blue-600 text-white shadow-md scale-105 ring-2 ring-blue-200'
+                                                    : 'bg-white border-2 border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600'
+                                                }`}
+                                            >
+                                                {option}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Checkbox */}
+                         {activeQuestion.type === 'checkbox' && (
+                            <div className="space-y-3 max-w-2xl">
+                                {activeQuestion.options?.map((option) => (
+                                <label key={option} className={`group flex items-center p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 ${
+                                    (answers[activeQuestion.id] || []).includes(option)
+                                    ? 'border-blue-600 bg-blue-50/50 shadow-sm' 
+                                    : 'border-gray-200 hover:border-blue-300 hover:bg-white'
+                                }`}>
+                                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center mr-4 transition-colors ${
+                                         (answers[activeQuestion.id] || []).includes(option) ? 'border-blue-600 bg-blue-600' : 'border-gray-300 group-hover:border-blue-400'
+                                    }`}>
+                                        <CheckCircle className="w-4 h-4 text-white" />
+                                    </div>
+                                    <input
+                                    type="checkbox"
+                                    checked={(answers[activeQuestion.id] || []).includes(option)}
+                                    onChange={(e) => {
+                                        const currentAnswers: string[] = answers[activeQuestion.id] || [];
+                                        const newAnswers = e.target.checked
+                                        ? [...currentAnswers, option]
+                                        : currentAnswers.filter((a) => a !== option);
+                                        handleAnswerChange(activeQuestion.id, newAnswers);
+                                    }}
+                                    className="hidden"
+                                    />
+                                    <span className={`text-lg font-medium transition-colors ${
+                                        (answers[activeQuestion.id] || []).includes(option) ? 'text-blue-900' : 'text-gray-700'
+                                    }`}>{option}</span>
+                                </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
-
-                {/* Question Input */}
-                {question.type === 'multiple-choice' && (
-                  <div className="space-y-2">
-                    {question.options?.map((option) => (
-                      <label key={option} className="flex items-center">
-                        <input
-                          type="radio"
-                          name={question.id}
-                          value={option}
-                          checked={answers[question.id] === option}
-                          onChange={(e) =>
-                            handleAnswerChange(question.id, e.target.value)
-                          }
-                          className="mr-3"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {option}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {question.type === 'checkbox' && (
-                  <div className="space-y-2">
-                    {question.options?.map((option) => (
-                      <label key={option} className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={
-                            (answers[question.id] || []).includes(option)
-                          }
-                          onChange={(e) => {
-                            const currentAnswers: string[] =
-                              answers[question.id] || [];
-                            const newAnswers = e.target.checked
-                              ? [...currentAnswers, option]
-                              : currentAnswers.filter((a) => a !== option);
-                            handleAnswerChange(question.id, newAnswers);
-                          }}
-                          className="mr-3"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {option}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {question.type === 'text' && (
-                  <textarea
-                    value={answers[question.id] || ''}
-                    onChange={(e) =>
-                      handleAnswerChange(question.id, e.target.value)
-                    }
-                    rows={4}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter your detailed response..."
-                  />
-                )}
-
-                {question.type === 'likert' && (
-                  <div className="flex space-x-4">
-                    {question.options?.map((option, optionIndex) => (
-                      <label
-                        key={option}
-                        className="flex flex-col items-center"
-                      >
-                        <input
-                          type="radio"
-                          name={question.id}
-                          value={optionIndex + 1}
-                          checked={
-                            answers[question.id] === optionIndex + 1
-                          }
-                          onChange={(e) =>
-                            handleAnswerChange(
-                              question.id,
-                              parseInt(e.target.value, 10)
-                            )
-                          }
-                          className="mb-2"
-                        />
-                        <span className="text-xs text-gray-600 text-center">
-                          {option}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {currentQuestions.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                <p>No questions available for this stage.</p>
-                <button
-                  onClick={() => setShowAddQuestion(true)}
-                  className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                >
-                  Add First Question
-                </button>
-              </div>
+            ) : (
+                /* DURUM 2: SORU YOKSA - Boş Ekran */
+                 <div className="text-center py-32 bg-white rounded-3xl shadow-sm border border-dashed border-gray-200 flex flex-col items-center justify-center">
+                    <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-6 ring-8 ring-gray-50/50">
+                        <Info className="w-12 h-12 text-gray-300" />
+                    </div>
+                    
+                    {currentStage === 'resolve' ? (
+                        <>
+                            <h3 className="text-2xl font-bold text-gray-900 mb-3">Assessment Complete</h3>
+                            <p className="text-gray-500 max-w-md mx-auto mb-10 text-lg">
+                                You have reached the final stage. Please review the risk assessment below and submit your evaluation.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <h3 className="text-2xl font-bold text-gray-900 mb-3">No Questions in this Stage</h3>
+                            <p className="text-gray-500 max-w-md mx-auto mb-10 text-lg">
+                                There are no questions defined for the <strong>{currentStage}</strong> stage for your role (<strong>{currentUser.role}</strong>).
+                            </p>
+                        </>
+                    )}
+                    
+                    {/* Resolve değilse soru ekleme butonu */}
+                    {currentStage !== 'resolve' && (
+                        <button
+                            onClick={() => setShowAddQuestion(true)}
+                            className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors mb-8"
+                        >
+                            <Plus className="w-4 h-4" /> Add a custom question to this stage
+                        </button>
+                    )}
+                </div>
             )}
-          </div>
+
+             {/* Risk Assessment Section (Resolve aşamasında her zaman görünür) */}
+             {currentStage === 'resolve' && (
+                <div className="mt-8 bg-white rounded-3xl shadow-sm border border-gray-200 p-8 animate-in slide-in-from-bottom-2">
+                    <div className="flex items-center gap-3 mb-6">
+                        <AlertTriangle className="w-7 h-7 text-yellow-500" />
+                        <h3 className="text-2xl font-bold text-gray-900">Final Risk Assessment</h3>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-6">
+                         {['low', 'medium', 'high'].map((level) => (
+                            <label key={level} className={`relative flex flex-col items-center p-8 rounded-2xl border-2 cursor-pointer transition-all duration-300 overflow-hidden ${
+                                riskLevel === level 
+                                ? level === 'low' ? 'border-green-500 bg-green-50/50 shadow-sm' : level === 'medium' ? 'border-yellow-500 bg-yellow-50/50 shadow-sm' : 'border-red-500 bg-red-50/50 shadow-sm'
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}>
+                                <input
+                                    type="radio"
+                                    name="riskLevel"
+                                    value={level}
+                                    checked={riskLevel === level}
+                                    onChange={(e) => setRiskLevel(e.target.value as RiskLevel)}
+                                    className="hidden"
+                                />
+                                <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 transition-colors ${
+                                     riskLevel === level 
+                                     ? level === 'low' ? 'bg-green-100 text-green-600' : level === 'medium' ? 'bg-yellow-100 text-yellow-600' : 'bg-red-100 text-red-600'
+                                     : 'bg-gray-100 text-gray-400'
+                                }`}>
+                                    {level === 'low' && <CheckCircle className="w-8 h-8" />}
+                                    {level === 'medium' && <AlertTriangle className="w-8 h-8" />}
+                                    {level === 'high' && <XCircle className="w-8 h-8" />}
+                                </div>
+                                <span className={`text-xl font-bold capitalize ${
+                                     riskLevel === level ? 'text-gray-900' : 'text-gray-500'
+                                }`}>{level} Risk</span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
 
-        {/* Risk Assessment */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mt-6">
-          <h3 className="text-lg mb-4 text-gray-900">
-            Ethical Risk Level Assessment
-          </h3>
-          <div className="flex space-x-6">
-            <label className="flex items-center">
-              <input
-                type="radio"
-                name="riskLevel"
-                value="low"
-                checked={riskLevel === 'low'}
-                onChange={(e) =>
-                  setRiskLevel(e.target.value as RiskLevel)
-                }
-                className="mr-2"
-              />
-              <div className="flex items-center">
-                <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                <span className="text-green-800">Low Risk</span>
-              </div>
-            </label>
-            <label className="flex items-center">
-              <input
-                type="radio"
-                name="riskLevel"
-                value="medium"
-                checked={riskLevel === 'medium'}
-                onChange={(e) =>
-                  setRiskLevel(e.target.value as RiskLevel)
-                }
-                className="mr-2"
-              />
-              <div className="flex items-center">
-                <AlertTriangle className="h-4 w-4 text-yellow-500 mr-2" />
-                <span className="text-yellow-800">Medium Risk</span>
-              </div>
-            </label>
-            <label className="flex items-center">
-              <input
-                type="radio"
-                name="riskLevel"
-                value="high"
-                checked={riskLevel === 'high'}
-                onChange={(e) =>
-                  setRiskLevel(e.target.value as RiskLevel)
-                }
-                className="mr-2"
-              />
-              <div className="flex items-center">
-                <XCircle className="h-4 w-4 text-red-500 mr-2" />
-                <span className="text-red-800">High Risk</span>
-              </div>
-            </label>
-          </div>
+        {/* --- GLOBAL FOOTER NAVIGATION (Her Zaman En Altta Görünür) --- */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 mt-8 flex justify-between items-center z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+            
+            {/* 1. PREVIOUS BUTTON (Sadece en baştaki durumda kilitli) */}
+            <button
+                onClick={handleBack}
+                disabled={currentStage === 'set-up' && isFirstQuestion}
+                className={`flex items-center px-6 py-3 rounded-xl font-semibold transition-all border-2 ${
+                    currentStage === 'set-up' && isFirstQuestion
+                    ? 'text-gray-300 border-gray-100 cursor-not-allowed bg-gray-50' 
+                    : 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+            >
+                <ChevronLeft className="w-5 h-5 mr-2" /> Previous
+            </button>
+
+            <div className="flex items-center gap-4">
+                <button 
+                    onClick={handleSaveDraft} 
+                    className="px-6 py-3 bg-indigo-50 border-2 border-indigo-100 text-indigo-600 font-semibold rounded-xl hover:bg-indigo-100 hover:border-indigo-200 transition-all flex items-center"
+                >
+                    <Save className="w-5 h-5 mr-2" /> Save Draft
+                </button>
+
+                {/* 2. NEXT / SUBMIT BUTTON (Her zaman Mavi/Yeşil) */}
+                <button
+                    onClick={handleForward}
+                    className={`flex items-center px-8 py-3 text-white rounded-xl font-bold shadow-md transition-all hover:-translate-y-0.5 ${
+                        currentStage === 'resolve' 
+                            ? 'bg-green-600 hover:bg-green-700' 
+                            : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                >
+                    {getNextButtonText()} <ChevronRight className="w-5 h-5 ml-2" />
+                </button>
+            </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex justify-between items-center mt-8 bg-white rounded-lg shadow-sm border p-6">
-          <div className="text-sm text-gray-600">
-            {isDraft ? 'Draft saved' : 'Unsaved changes'}
-          </div>
-          <div className="flex space-x-3">
-            <button
-              onClick={handleSaveDraft}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              Save Draft
-            </button>
-            <button
-              onClick={handleSubmitForm}
-              className="px-6 py-2 text-white rounded-lg transition-colors hover:opacity-90 flex items-center"
-              style={{ backgroundColor: roleColor }}
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Submit Evaluation
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Add Question Modal */}
       {showAddQuestion && (
         <AddQuestionModal
           currentStage={currentStage}
@@ -945,164 +485,164 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   );
 }
 
+// --- MODAL ---
 interface AddQuestionModalProps {
   currentStage: StageKey;
   onClose: () => void;
   onAdd: (question: Question) => void;
 }
 
-function AddQuestionModal({
-  currentStage,
-  onClose,
-  onAdd
-}: AddQuestionModalProps) {
-  const [questionText, setQuestionText] = useState('');
-  const [questionType, setQuestionType] =
-    useState<QuestionType>('text');
-  const [options, setOptions] = useState<string[]>(['']);
-  const [required, setRequired] = useState(false);
+function AddQuestionModal({ currentStage, onClose, onAdd }: AddQuestionModalProps) {
+  const [text, setText] = useState('');
+  const [description, setDescription] = useState('');
+  const [type, setType] = useState<QuestionType>('text');
+  const [options, setOptions] = useState<string[]>(['Option 1', 'Option 2']);
+  const [required, setRequired] = useState(true);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    const question: Question = {
+    const newQuestion: Question = {
       id: `custom_${Date.now()}`,
       stage: currentStage,
-      text: questionText,
-      type: questionType,
-      options:
-        questionType !== 'text'
-          ? options.filter((o) => o.trim())
-          : undefined,
-      required
+      text,
+      description: description || undefined,
+      type,
+      required,
+      options: (type === 'multiple-choice' || type === 'select' || type === 'radio' || type === 'checkbox') 
+        ? options.filter(o => o.trim() !== '') 
+        : undefined,
+      min: type === 'likert' ? 1 : undefined,
+      max: type === 'likert' ? 5 : undefined,
     };
-
-    onAdd(question);
+    onAdd(newQuestion);
     onClose();
   };
 
-  const addOption = () => {
-    setOptions((prev) => [...prev, '']);
+  const handleOptionChange = (index: number, value: string) => {
+    const newOptions = [...options];
+    newOptions[index] = value;
+    setOptions(newOptions);
   };
 
-  const updateOption = (index: number, value: string) => {
-    setOptions((prev) => {
-      const newOptions = [...prev];
-      newOptions[index] = value;
-      return newOptions;
-    });
+  const addOption = () => {
+    setOptions([...options, `Option ${options.length + 1}`]);
   };
 
   const removeOption = (index: number) => {
-    setOptions((prev) => prev.filter((_, i) => i !== index));
+    setOptions(options.filter((_, i) => i !== index));
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b">
-          <h2 className="text-xl text-gray-900">Add Custom Question</h2>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+        <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-white">
           <div>
-            <label className="block text-sm mb-2 text-gray-700">
-              Question Text *
-            </label>
-            <textarea
-              value={questionText}
-              onChange={(e) => setQuestionText(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter your question..."
+            <h2 className="text-2xl font-bold text-gray-900">Add Custom Question</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Adding to <span className="font-semibold text-blue-600 uppercase">{currentStage}</span> stage
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors bg-gray-50 p-2 rounded-full hover:bg-gray-100">
+            <XCircle className="w-6 h-6" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-6 bg-gray-50/30">
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Question Text <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none bg-white"
+              placeholder="e.g., Does the system have a rollback mechanism?"
               required
             />
           </div>
-
           <div>
-            <label className="block text-sm mb-2 text-gray-700">
-              Question Type
-            </label>
-            <select
-              value={questionType}
-              onChange={(e) =>
-                setQuestionType(e.target.value as QuestionType)
-              }
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="text">Open Text</option>
-              <option value="multiple-choice">Multiple Choice</option>
-              <option value="checkbox">Checkbox</option>
-              <option value="likert">Likert Scale</option>
-            </select>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Description / Rationale <span className="text-gray-400 font-normal">(Optional)</span></label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none bg-white"
+              placeholder="Explain why this question is important..."
+            />
           </div>
-
-          {(questionType === 'multiple-choice' ||
-            questionType === 'checkbox' ||
-            questionType === 'likert') && (
+          <div className="grid grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm mb-2 text-gray-700">
-                Options
-              </label>
-              <div className="space-y-2">
-                {options.map((option, index) => (
-                  <div key={index} className="flex items-center space-x-2">
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Answer Type</label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value as QuestionType)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none bg-white"
+              >
+                <option value="text">Open Text</option>
+                <option value="multiple-choice">Multiple Choice (Radio)</option>
+                <option value="checkbox">Multiple Select (Checkbox)</option>
+                <option value="likert">Rating Scale (1-5)</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-between p-3 border-2 border-gray-200 rounded-xl bg-white">
+              <span className="text-sm font-medium text-gray-900">Is this required?</span>
+              <button
+                type="button"
+                onClick={() => setRequired(!required)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  required ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  required ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+          </div>
+          {(type === 'multiple-choice' || type === 'checkbox' || type === 'select' || type === 'radio') && (
+            <div className="bg-white p-6 rounded-xl border-2 border-gray-200 animate-in slide-in-from-top-2">
+              <label className="block text-sm font-semibold text-gray-900 mb-3">Answer Options</label>
+              <div className="space-y-3">
+                {options.map((opt, idx) => (
+                  <div key={idx} className="flex gap-3">
                     <input
                       type="text"
-                      value={option}
-                      onChange={(e) =>
-                        updateOption(index, e.target.value)
-                      }
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder={`Option ${index + 1}`}
+                      value={opt}
+                      onChange={(e) => handleOptionChange(idx, e.target.value)}
+                      className="flex-1 px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-blue-500 outline-none text-sm"
+                      placeholder={`Option ${idx + 1}`}
+                      required
                     />
                     {options.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => removeOption(index)}
-                        className="text-red-600 hover:text-red-800"
+                        onClick={() => removeOption(idx)}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       >
-                        Sil
+                        <XCircle className="w-5 h-5" />
                       </button>
                     )}
                   </div>
                 ))}
-                <button
-                  type="button"
-                  onClick={addOption}
-                  className="text-blue-600 hover:text-blue-800 text-sm"
-                >
-                  + Add Option
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={addOption}
+                className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" /> Add Another Option
+              </button>
             </div>
           )}
-
-          <div>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={required}
-                onChange={(e) => setRequired(e.target.checked)}
-                className="mr-2"
-              />
-              <span className="text-sm text-gray-700">
-                Required question
-              </span>
-            </label>
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-4">
+          <div className="pt-6 border-t border-gray-100 flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              className="px-6 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-100 transition-colors border-2 border-transparent hover:border-gray-200"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              className="px-8 py-3 rounded-xl bg-blue-600 text-white font-bold shadow-md hover:bg-blue-700 transition-all transform active:scale-95 hover:-translate-y-0.5"
             >
               Add Question
             </button>

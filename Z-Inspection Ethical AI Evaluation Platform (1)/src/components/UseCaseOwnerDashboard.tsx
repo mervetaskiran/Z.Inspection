@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, LogOut, FolderOpen, Upload, X, FileText, Clock, TrendingUp, Eye, Download, Info, Database, Users as UsersIcon, Scale } from 'lucide-react';
+import { Plus, LogOut, FolderOpen, Upload, X, FileText, Clock, Eye, Download, Info, Database, Users as UsersIcon, Scale } from 'lucide-react';
 import { User, UseCase } from '../types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
@@ -35,20 +35,27 @@ export function UseCaseOwnerDashboard({
 
   const myUseCases = useCases.filter(uc => uc.ownerId === currentUser.id);
 
+  // ⭐ TEMPLATE DOWNLOAD FUNCTION
+  const handleDownloadTemplate = () => {
+    const link = document.createElement("a");
+    link.href = "/templates/usecase-template.docx"; 
+    link.download = "usecase-template.docx";
+    link.click();
+  };
+
   return (
     <div className="flex h-screen bg-gray-50">
+
       {/* Sidebar */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        {/* Role Color Bar */}
+
         <div className="h-1 bg-gradient-to-r from-green-500 to-green-600" />
-        
-        {/* Logo/Header */}
+
         <div className="p-6 border-b border-gray-200">
           <div className="text-xl text-gray-900 mb-1">Z-Inspection</div>
           <div className="text-xs text-gray-600">Use-case Owner Portal</div>
         </div>
 
-        {/* User Profile */}
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center">
             <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center text-white mr-3">
@@ -61,7 +68,6 @@ export function UseCaseOwnerDashboard({
           </div>
         </div>
 
-        {/* Navigation - Restricted */}
         <nav className="flex-1 px-3 py-4">
           <button className="w-full px-4 py-3 mb-2 flex items-center bg-green-50 text-green-700 rounded-lg">
             <FolderOpen className="h-4 w-4 mr-3" />
@@ -69,7 +75,6 @@ export function UseCaseOwnerDashboard({
           </button>
         </nav>
 
-        {/* Logout */}
         <div className="p-4 border-t border-gray-200">
           <button
             onClick={onLogout}
@@ -83,6 +88,7 @@ export function UseCaseOwnerDashboard({
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
+
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-8 py-6">
           <div className="flex items-center justify-between">
@@ -100,7 +106,7 @@ export function UseCaseOwnerDashboard({
           </div>
         </div>
 
-        {/* Use Case Template Banner */}
+        {/* ⭐ TEMPLATE DOWNLOAD BANNER */}
         <div className="mx-8 mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
           <div className="flex items-center">
             <FileText className="h-5 w-5 text-blue-600 mr-3" />
@@ -109,13 +115,16 @@ export function UseCaseOwnerDashboard({
               <div className="text-xs text-blue-700">Download our use case template for guidance</div>
             </div>
           </div>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm flex items-center">
+
+          <button
+            onClick={handleDownloadTemplate}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm flex items-center"
+          >
             <Download className="h-4 w-4 mr-2" />
             Download Template
           </button>
         </div>
-
-        {/* Use Cases Grid */}
+                {/* Use Cases Grid */}
         <div className="px-8 py-6">
           {myUseCases.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -129,7 +138,7 @@ export function UseCaseOwnerDashboard({
                     <div className="flex items-start justify-between mb-3">
                       <h3 className="text-lg text-gray-900 flex-1 mr-2">{useCase.title}</h3>
                       <span
-                        className={`px-2 py-1 text-xs rounded-full ${statusColors[useCase.status].bg} ${statusColors[useCase.status].text} whitespace-nowrap`}
+                        className={`px-2 py-1 text-xs rounded-full ${statusColors[useCase.status].bg} ${statusColors[useCase.status].text}`}
                       >
                         {statusLabels[useCase.status]}
                       </span>
@@ -151,7 +160,7 @@ export function UseCaseOwnerDashboard({
                     </div>
                   </div>
 
-                  {/* Metadata */}
+                  {/* Metadata + Experts */}
                   <div className="px-6 py-4 bg-gray-50">
                     <div className="flex items-center justify-between text-xs text-gray-600 mb-3">
                       <div className="flex items-center">
@@ -159,7 +168,7 @@ export function UseCaseOwnerDashboard({
                         Last updated: {new Date(useCase.updatedAt).toLocaleDateString()}
                       </div>
                     </div>
-                    
+
                     {/* Assigned Experts */}
                     {useCase.assignedExperts && useCase.assignedExperts.length > 0 && (
                       <div className="flex items-center mb-3">
@@ -211,7 +220,7 @@ export function UseCaseOwnerDashboard({
         </div>
       </div>
 
-      {/* New Use Case Modal */}
+      {/* NEW USE CASE MODAL */}
       {showNewUseCaseModal && (
         <NewUseCaseModal
           onClose={() => setShowNewUseCaseModal(false)}
@@ -240,7 +249,7 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
   const [dragActive, setDragActive] = useState(false);
   const [files, setFiles] = useState<string[]>([]);
 
-  // Section I - Basic System Definition
+  // Section I
   const [systemName, setSystemName] = useState('');
   const [systemVersion, setSystemVersion] = useState('');
   const [developer, setDeveloper] = useState('');
@@ -252,7 +261,7 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
   const [solutionCurrency, setSolutionCurrency] = useState('');
   const [legalCompliance, setLegalCompliance] = useState('');
 
-  // Section II - Actors, Decision-Making & Oversight
+  // Section II
   const [targetUsers, setTargetUsers] = useState('');
   const [userProficiency, setUserProficiency] = useState('');
   const [epistemicAuthority, setEpistemicAuthority] = useState('');
@@ -260,7 +269,7 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
   const [operationalDelay, setOperationalDelay] = useState('');
   const [accessibility, setAccessibility] = useState('');
 
-  // Section III - Data Governance & Technical Robustness
+  // Section III
   const [modelType, setModelType] = useState('');
   const [dataSource, setDataSource] = useState('');
   const [trainingDataCharacteristics, setTrainingDataCharacteristics] = useState('');
@@ -272,14 +281,14 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
   const [cybersecurity, setCybersecurity] = useState('');
   const [modelMaintenance, setModelMaintenance] = useState('');
 
-  // Section IV - Ethics, Fairness & Social Impact
+  // Section IV
   const [ethicalRisks, setEthicalRisks] = useState('');
   const [biasMonitoring, setBiasMonitoring] = useState('');
   const [resourceDependency, setResourceDependency] = useState('');
   const [adverseOutcomes, setAdverseOutcomes] = useState('');
   const [environmentalImpact, setEnvironmentalImpact] = useState('');
 
-  // Section V - Explainability & Accountability
+  // Section V
   const [explainability, setExplainability] = useState('');
   const [uncertaintyCommunication, setUncertaintyCommunication] = useState('');
   const [modelDocumentation, setModelDocumentation] = useState('');
@@ -310,7 +319,6 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       supportingFiles: files.map(f => ({ name: f, url: '#' })),
-      // Extended information
       extendedInfo: {
         sectionI: {
           systemName,
@@ -391,7 +399,7 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const newFiles = Array.from(e.dataTransfer.files).map(f => f.name);
       setFiles([...files, ...newFiles]);
@@ -401,7 +409,8 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
   return (
     <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
+
+        {/* HEADER */}
         <div className="sticky top-0 bg-white border-b border-gray-200 shadow-sm z-10">
           <div className="px-6 py-4 flex items-center justify-between">
             <h2 className="text-xl text-gray-900">Create New Use Case</h2>
@@ -423,791 +432,32 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
           </div>
         </div>
 
+        {/* FORM START */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Basic Information Section */}
+
+          {/* BASIC INFORMATION */}
           <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
             <div>
               <h3 className="text-lg text-gray-900 mb-4">🩺 Basic Information</h3>
             </div>
 
-            <div>
-              <label className="block text-sm mb-2 text-gray-700">Use Case Title *</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="e.g., Medical Image Analysis for Cancer Detection"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm mb-2 text-gray-700">Description *</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="Provide a detailed description of your AI system, its purpose, and intended use..."
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm mb-2 text-gray-700">AI System Category *</label>
-              <select
-                value={aiSystemCategory}
-                onChange={(e) => setAiSystemCategory(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                required
-              >
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-2 text-gray-700">Upload Supporting Files</label>
-            <div
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                dragActive ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-gray-50'
-              }`}
-            >
-              <Upload className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-sm text-gray-600 mb-1">Drag and drop files here, or click to browse</p>
-              <p className="text-xs text-gray-500">Supported: PDF, DOCX, XLSX, PNG, JPG (Max 10MB)</p>
-              <input
-                type="file"
-                multiple
-                onChange={(e) => {
-                  if (e.target.files) {
-                    const newFiles = Array.from(e.target.files).map(f => f.name);
-                    setFiles([...files, ...newFiles]);
-                  }
-                }}
-                className="hidden"
-                id="file-upload"
-              />
-              <label
-                htmlFor="file-upload"
-                className="inline-block mt-3 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 cursor-pointer text-sm"
-              >
-                Browse Files
-              </label>
-            </div>
-
-            {files.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {files.map((file, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <div className="flex items-center text-sm text-gray-700">
-                      <FileText className="h-4 w-4 mr-2 text-gray-400" />
-                      {file}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFiles(files.filter((_, i) => i !== idx))}
-                      className="text-gray-400 hover:text-red-600"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className="relative py-4">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-gray-50 px-4 text-sm text-gray-600">
-                Extended Information – Z-Inspection® Structured Sections
-              </span>
-            </div>
-          </div>
-
-          {/* Z-Inspection Sections */}
-          <Accordion type="multiple" className="space-y-4">
-            {/* SECTION I */}
-            <AccordionItem value="section-1" className="bg-white rounded-lg shadow-sm border">
-              <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                <div className="flex items-center space-x-3 w-full">
-                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <h3 className="text-gray-900">🩺 SECTION I – BASIC SYSTEM DEFINITION AND SCOPE</h3>
-                    <p className="text-xs text-blue-600 mt-1">EU Trustworthy AI → "Lawful, Transparent Purpose"</p>
+                        {/* Title */}
+                        <div>
+                          <label className="block text-sm mb-2 text-gray-700">Use Case Title *</label>
+                          <input
+                            type="text"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            placeholder="e.g., Medical Image Analysis for Cancer Detection"
+                            required
+                          />
+                        </div>
+                      </div>
+                    </form>
                   </div>
                 </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-6 pb-6">
-                <div className="space-y-4 pt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                        System Name and Version *
-                        <InfoTooltip content="Full name, version, and codename (if any)" />
-                      </label>
-                      <input
-                        type="text"
-                        value={systemName}
-                        onChange={(e) => setSystemName(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                        placeholder="e.g., MediScan AI v2.1"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                        Developer / Organization *
-                        <InfoTooltip content="Institution, team, or company responsible" />
-                      </label>
-                      <input
-                        type="text"
-                        value={developer}
-                        onChange={(e) => setDeveloper(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                        placeholder="e.g., HealthTech Innovations Inc."
-                        required
-                      />
-                    </div>
-                  </div>
+              );
+            }
 
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Application Domain *
-                      <InfoTooltip content="Sector (Healthcare, Finance, Legal, HR, Education, etc.)" />
-                    </label>
-                    <select
-                      value={applicationDomain}
-                      onChange={(e) => setApplicationDomain(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      required
-                    >
-                      <option value="">Select domain...</option>
-                      <option value="healthcare">Healthcare</option>
-                      <option value="finance">Finance</option>
-                      <option value="legal">Legal</option>
-                      <option value="hr">Human Resources</option>
-                      <option value="education">Education</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Purpose and Problem Statement *
-                      <InfoTooltip content="What problem is the system designed to solve?" />
-                    </label>
-                    <textarea
-                      value={purposeStatement}
-                      onChange={(e) => setPurposeStatement(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe the problem this AI system aims to solve..."
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                        Deployment Environment *
-                        <InfoTooltip content="Cloud, On-Premise, Embedded, or Hybrid" />
-                      </label>
-                      <select
-                        value={deploymentEnvironment}
-                        onChange={(e) => setDeploymentEnvironment(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                        required
-                      >
-                        <option value="">Select environment...</option>
-                        <option value="cloud">Cloud</option>
-                        <option value="on-premise">On-Premise</option>
-                        <option value="embedded">Embedded</option>
-                        <option value="hybrid">Hybrid</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                        Deployment Stage *
-                        <InfoTooltip content="Pilot, Beta, Production, or Maintenance" />
-                      </label>
-                      <select
-                        value={deploymentStage}
-                        onChange={(e) => setDeploymentStage(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                        required
-                      >
-                        <option value="">Select stage...</option>
-                        <option value="pilot">Pilot</option>
-                        <option value="beta">Beta</option>
-                        <option value="production">Production</option>
-                        <option value="maintenance">Maintenance</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Primary Claims
-                      <InfoTooltip content="Developer's key performance, ethical, or impact claims" />
-                    </label>
-                    <textarea
-                      value={primaryClaims}
-                      onChange={(e) => setPrimaryClaims(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="List main claims about system performance, ethics, or impact..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Solution Currency
-                      <InfoTooltip content="Alignment with latest industry or legal standards" />
-                    </label>
-                    <textarea
-                      value={solutionCurrency}
-                      onChange={(e) => setSolutionCurrency(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe alignment with current standards..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Legal and Regulatory Compliance
-                      <InfoTooltip content="GDPR, HIPAA, ISO, etc." />
-                    </label>
-                    <textarea
-                      value={legalCompliance}
-                      onChange={(e) => setLegalCompliance(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="List applicable regulations..."
-                    />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* SECTION II */}
-            <AccordionItem value="section-2" className="bg-white rounded-lg shadow-sm border">
-              <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                <div className="flex items-center space-x-3 w-full">
-                  <div className="flex-shrink-0 w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                    <UsersIcon className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <h3 className="text-gray-900">🧍‍♀️ SECTION II – ACTORS, DECISION-MAKING & OVERSIGHT</h3>
-                    <p className="text-xs text-purple-600 mt-1">"Human Agency & Oversight" principle</p>
-                  </div>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-6 pb-6">
-                <div className="space-y-4 pt-4">
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Target Users and Reach *
-                      <InfoTooltip content="Primary and secondary user groups" />
-                    </label>
-                    <textarea
-                      value={targetUsers}
-                      onChange={(e) => setTargetUsers(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe primary and secondary user groups..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      User Proficiency and Experience
-                      <InfoTooltip content="Technical level (expert, general public)" />
-                    </label>
-                    <textarea
-                      value={userProficiency}
-                      onChange={(e) => setUserProficiency(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe typical user technical proficiency..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Epistemic Authority (Expertise)
-                      <InfoTooltip content="Decision-support or decision-maker? Who holds final authority?" />
-                    </label>
-                    <textarea
-                      value={epistemicAuthority}
-                      onChange={(e) => setEpistemicAuthority(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Explain who has final decision authority..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Overtrust Risk
-                      <InfoTooltip content="Measures preventing user overreliance or confirmation bias" />
-                    </label>
-                    <textarea
-                      value={overtrustRisk}
-                      onChange={(e) => setOvertrustRisk(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe measures to prevent overreliance..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Operational Delay and Usability
-                      <InfoTooltip content="Does system latency cause workflow delays?" />
-                    </label>
-                    <textarea
-                      value={operationalDelay}
-                      onChange={(e) => setOperationalDelay(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Address system latency and workflow integration..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Accessibility and Universal Design
-                      <InfoTooltip content="Support for disabled or vulnerable users" />
-                    </label>
-                    <textarea
-                      value={accessibility}
-                      onChange={(e) => setAccessibility(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe accessibility features..."
-                    />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* SECTION III */}
-            <AccordionItem value="section-3" className="bg-white rounded-lg shadow-sm border">
-              <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                <div className="flex items-center space-x-3 w-full">
-                  <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                    <Database className="h-5 w-5 text-green-600" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <h3 className="text-gray-900">💾 SECTION III – DATA GOVERNANCE & TECHNICAL ROBUSTNESS</h3>
-                    <p className="text-xs text-green-600 mt-1">"Technical Robustness & Safety," "Privacy & Data Governance"</p>
-                  </div>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-6 pb-6">
-                <div className="space-y-4 pt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                        Model Type *
-                        <InfoTooltip content="Algorithm/model type (CNN, LLM, etc.)" />
-                      </label>
-                      <input
-                        type="text"
-                        value={modelType}
-                        onChange={(e) => setModelType(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                        placeholder="e.g., CNN, LLM, Random Forest"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                        Data Source *
-                        <InfoTooltip content="Origin and nature of training data" />
-                      </label>
-                      <input
-                        type="text"
-                        value={dataSource}
-                        onChange={(e) => setDataSource(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                        placeholder="e.g., Public medical databases"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      General Characteristics of Training Data *
-                      <InfoTooltip content="Format, diversity, geographic scope, volume" />
-                    </label>
-                    <textarea
-                      value={trainingDataCharacteristics}
-                      onChange={(e) => setTrainingDataCharacteristics(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe data format, diversity, geographic coverage..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Training Sufficiency and Parameters
-                      <InfoTooltip content="Validation/test splits and metrics used" />
-                    </label>
-                    <textarea
-                      value={trainingSufficiency}
-                      onChange={(e) => setTrainingSufficiency(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Detail train/validation/test splits and metrics..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Data Appropriateness and Soundness *
-                      <InfoTooltip content="Data relevance and bias risk" />
-                    </label>
-                    <textarea
-                      value={dataAppropriateness}
-                      onChange={(e) => setDataAppropriateness(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Assess data quality, relevance, and potential bias..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Federated Learning & Quality Control
-                      <InfoTooltip content="Bias control across federated nodes (if applicable)" />
-                    </label>
-                    <textarea
-                      value={federatedLearning}
-                      onChange={(e) => setFederatedLearning(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="If using federated learning, describe quality control..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Model Generalization
-                      <InfoTooltip content="Performance limits across regions/populations" />
-                    </label>
-                    <textarea
-                      value={modelGeneralization}
-                      onChange={(e) => setModelGeneralization(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Discuss model performance across different contexts..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Data Privacy and Anonymization *
-                      <InfoTooltip content="Anonymization/pseudonymization and compliance" />
-                    </label>
-                    <textarea
-                      value={dataPrivacy}
-                      onChange={(e) => setDataPrivacy(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe anonymization methods and privacy compliance..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Cybersecurity and Resilience
-                      <InfoTooltip content="Security audits, adversarial defense, encryption" />
-                    </label>
-                    <textarea
-                      value={cybersecurity}
-                      onChange={(e) => setCybersecurity(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Detail security measures and audits..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Model Maintenance and Drift
-                      <InfoTooltip content="Retraining or monitoring protocol" />
-                    </label>
-                    <textarea
-                      value={modelMaintenance}
-                      onChange={(e) => setModelMaintenance(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe monitoring and retraining schedule..."
-                    />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* SECTION IV */}
-            <AccordionItem value="section-4" className="bg-white rounded-lg shadow-sm border">
-              <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                <div className="flex items-center space-x-3 w-full">
-                  <div className="flex-shrink-0 w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
-                    <Scale className="h-5 w-5 text-amber-600" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <h3 className="text-gray-900">⚖️ SECTION IV – ETHICS, FAIRNESS & SOCIAL IMPACT</h3>
-                    <p className="text-xs text-amber-600 mt-1">"Diversity, Non-Discrimination & Fairness," "Societal & Environmental Well-being"</p>
-                  </div>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-6 pb-6">
-                <div className="space-y-4 pt-4">
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Ethical Risk Identification *
-                      <InfoTooltip content="Documented risks (bias, discrimination, harm)" />
-                    </label>
-                    <textarea
-                      value={ethicalRisks}
-                      onChange={(e) => setEthicalRisks(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Identify and document ethical risks..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Bias Monitoring and Fairness Controls *
-                      <InfoTooltip content="Bias detection/mitigation methods and fairness metrics" />
-                    </label>
-                    <textarea
-                      value={biasMonitoring}
-                      onChange={(e) => setBiasMonitoring(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe bias detection methods and mitigation strategies..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Resource Dependency and Inequality
-                      <InfoTooltip content="Does performance depend on resource-rich environments?" />
-                    </label>
-                    <textarea
-                      value={resourceDependency}
-                      onChange={(e) => setResourceDependency(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Assess if system performance varies based on resources..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Adverse Outcomes and Impact Analysis *
-                      <InfoTooltip content="Observed/predicted social impacts" />
-                    </label>
-                    <textarea
-                      value={adverseOutcomes}
-                      onChange={(e) => setAdverseOutcomes(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Document observed or predicted adverse outcomes..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Environmental Impact
-                      <InfoTooltip content="Energy use, carbon footprint, sustainability" />
-                    </label>
-                    <textarea
-                      value={environmentalImpact}
-                      onChange={(e) => setEnvironmentalImpact(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Assess energy consumption and carbon footprint..."
-                    />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* SECTION V */}
-            <AccordionItem value="section-5" className="bg-white rounded-lg shadow-sm border">
-              <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                <div className="flex items-center space-x-3 w-full">
-                  <div className="flex-shrink-0 w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-indigo-600" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <h3 className="text-gray-900">🧩 SECTION V – EXPLAINABILITY & ACCOUNTABILITY</h3>
-                    <p className="text-xs text-indigo-600 mt-1">"Transparency & Accountability" principles</p>
-                  </div>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-6 pb-6">
-                <div className="space-y-4 pt-4">
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Decision Explainability (XAI) *
-                      <InfoTooltip content="Interpretability methods (SHAP, LIME, etc.)" />
-                    </label>
-                    <textarea
-                      value={explainability}
-                      onChange={(e) => setExplainability(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe XAI methods used (SHAP, LIME, etc.)..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Communicating Uncertainty
-                      <InfoTooltip content="How is uncertainty or confidence communicated?" />
-                    </label>
-                    <textarea
-                      value={uncertaintyCommunication}
-                      onChange={(e) => setUncertaintyCommunication(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Explain how uncertainty is communicated to users..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Model Documentation & Transparency *
-                      <InfoTooltip content="Model cards, datasheets, or documentation" />
-                    </label>
-                    <textarea
-                      value={modelDocumentation}
-                      onChange={(e) => setModelDocumentation(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe available documentation (model cards, etc.)..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Feedback & Improvement Mechanisms *
-                      <InfoTooltip content="Process for collecting and integrating feedback" />
-                    </label>
-                    <textarea
-                      value={feedbackMechanisms}
-                      onChange={(e) => setFeedbackMechanisms(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe feedback collection and improvement processes..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Cost-Benefit Analysis
-                      <InfoTooltip content="System cost vs. societal benefit" />
-                    </label>
-                    <textarea
-                      value={costBenefit}
-                      onChange={(e) => setCostBenefit(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Analyze costs vs. benefits..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Accountability & Redress *
-                      <InfoTooltip content="Legal liability and redress mechanism" />
-                    </label>
-                    <textarea
-                      value={accountability}
-                      onChange={(e) => setAccountability(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Define accountability structure and redress mechanisms..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-2 text-gray-700 flex items-center">
-                      Traceability & Logging *
-                      <InfoTooltip content="Outputs and versions logged with timestamps" />
-                    </label>
-                    <textarea
-                      value={traceability}
-                      onChange={(e) => setTraceability(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                      placeholder="Describe logging systems and audit trails..."
-                      required
-                    />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-
-          {/* Submit Note and Actions */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-sm text-yellow-800">
-              <strong>Note:</strong> Once submitted, you cannot edit the use case. You will be able to view progress and feedback from experts.
-            </p>
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-4 sticky bottom-0 bg-gray-50 py-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-3 text-gray-600 hover:text-gray-800 rounded-lg border border-gray-300"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              Submit Use Case
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
