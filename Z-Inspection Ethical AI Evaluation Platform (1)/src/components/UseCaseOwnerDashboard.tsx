@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, LogOut, FolderOpen, Upload, X, FileText, Clock, Eye, Download, Info, Database, Users as UsersIcon, Scale } from 'lucide-react';
+import { Plus, LogOut, FolderOpen, Upload, X, FileText, Clock, Eye, Download, Info, Database, Users as UsersIcon, Scale, Trash2 } from 'lucide-react';
 import { User, UseCase } from '../types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
@@ -9,6 +9,7 @@ interface UseCaseOwnerDashboardProps {
   useCases: UseCase[];
   onCreateUseCase: (useCase: Partial<UseCase>) => void;
   onViewUseCase: (useCase: UseCase) => void;
+  onDeleteUseCase: (useCaseId: string) => void;
   onLogout: () => void;
 }
 
@@ -29,6 +30,7 @@ export function UseCaseOwnerDashboard({
   useCases,
   onCreateUseCase,
   onViewUseCase,
+  onDeleteUseCase,
   onLogout
 }: UseCaseOwnerDashboardProps) {
   const [showNewUseCaseModal, setShowNewUseCaseModal] = useState(false);
@@ -137,11 +139,25 @@ export function UseCaseOwnerDashboard({
                   <div className="px-6 pt-6 pb-4 border-b border-gray-100">
                     <div className="flex items-start justify-between mb-3">
                       <h3 className="text-lg text-gray-900 flex-1 mr-2">{useCase.title}</h3>
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${statusColors[useCase.status].bg} ${statusColors[useCase.status].text}`}
-                      >
-                        {statusLabels[useCase.status]}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${statusColors[useCase.status].bg} ${statusColors[useCase.status].text}`}
+                        >
+                          {statusLabels[useCase.status]}
+                        </span>
+                        <button
+                          onClick={() => {
+                            const confirmed = window.confirm(`Delete use case "${useCase.title}"?`);
+                            if (confirmed) {
+                              onDeleteUseCase(useCase.id);
+                            }
+                          }}
+                          className="inline-flex items-center px-2.5 py-1 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          Delete
+                        </button>
+                      </div>
                     </div>
                     <p className="text-sm text-gray-600 line-clamp-2">{useCase.description}</p>
                   </div>
@@ -241,13 +257,19 @@ interface NewUseCaseModalProps {
   currentUser: User;
 }
 
+type FileAttachment = {
+  name: string;
+  data: string; // base64
+  contentType?: string;
+};
+
 function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProps) {
   // Basic Information
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [aiSystemCategory, setAiSystemCategory] = useState('Healthcare & Medical');
   const [dragActive, setDragActive] = useState(false);
-  const [files, setFiles] = useState<string[]>([]);
+  const [files, setFiles] = useState<FileAttachment[]>([]);
 
   // Section I
   const [systemName, setSystemName] = useState('');
@@ -318,7 +340,11 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
       ownerId: currentUser.id,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      supportingFiles: files.map(f => ({ name: f, url: '#' })),
+      supportingFiles: files.map(f => ({
+        name: f.name,
+        data: f.data,
+        contentType: f.contentType,
+      })),
       extendedInfo: {
         sectionI: {
           systemName,
@@ -395,15 +421,35 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const fileToAttachment = (file: File): Promise<FileAttachment> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve({
+          name: file.name,
+          data: reader.result as string,
+          contentType: file.type || 'application/octet-stream',
+        });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const attachments = await Promise.all(Array.from(fileList).map(fileToAttachment));
+    setFiles(prev => [...prev, ...attachments]);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
+    await handleFiles(e.dataTransfer.files);
+  };
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const newFiles = Array.from(e.dataTransfer.files).map(f => f.name);
-      setFiles([...files, ...newFiles]);
-    }
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await handleFiles(e.target.files);
   };
 
   return (
@@ -453,6 +499,50 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
                             required
                           />
                         </div>
+
+                    {/* File Upload */}
+                    <div className="mt-4">
+                      <label className="block text-sm mb-2 text-gray-700">Attach Files (optional)</label>
+                      <div
+                        onDragEnter={handleDrag}
+                        onDragOver={handleDrag}
+                        onDragLeave={handleDrag}
+                        onDrop={handleDrop}
+                        className={`border-2 border-dashed rounded-lg p-4 text-center ${dragActive ? 'border-green-400 bg-green-50' : 'border-gray-200'}`}
+                      >
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleFileInput}
+                          className="hidden"
+                          id="usecase-file-upload"
+                        />
+                        <label htmlFor="usecase-file-upload" className="cursor-pointer text-sm text-green-700 hover:underline flex items-center justify-center space-x-2">
+                          <Upload className="w-4 h-4" />
+                          <span>Click to upload or drag files here</span>
+                        </label>
+                        <p className="text-xs text-gray-500 mt-2">Files will be shared with assigned experts.</p>
+                      </div>
+                      {files.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {files.map((file) => (
+                            <div key={file.name} className="flex items-center justify-between text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                              <div className="flex items-center space-x-2">
+                                <FileText className="w-4 h-4 text-gray-500" />
+                                <span className="text-gray-800">{file.name}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setFiles(prev => prev.filter(f => f.name !== file.name))}
+                                className="text-red-600 text-xs hover:underline"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                       </div>
                     </form>
                   </div>

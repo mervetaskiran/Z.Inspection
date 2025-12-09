@@ -39,9 +39,10 @@ export type EthicalPrinciple = 'Fairness' | 'Privacy' | 'Accountability' | 'Tran
 export interface Tension {
   id: string;
   projectId: string;
-  tensionDescription: string;
+  tensionDescription?: string;
   claimStatement: string;
-  supportingArgument: string;
+  supportingArgument?: string;
+  description?: string;
   status: 'ongoing' | 'proven' | 'disproven';
   consensus: {
     agree: number;
@@ -53,6 +54,22 @@ export interface Tension {
   weight: number; // 3 = high, 2 = medium, 1 = low
   principle1?: EthicalPrinciple;
   principle2?: EthicalPrinciple;
+  evidences?: Array<{
+    title: string;
+    description?: string;
+    fileName?: string;
+    fileData?: string;
+    fileUrl?: string;
+    uploadedBy?: string;
+    uploadedAt?: string | Date;
+  }>;
+  comments?: Array<{
+    text: string;
+    authorId?: string;
+    authorName?: string;
+    date?: string;
+  }>;
+  userVote?: 'agree' | 'disagree' | null;
 }
 
 export interface Evaluation {
@@ -117,7 +134,7 @@ export interface UseCase {
   supportingFiles?: {
     name: string;
     url?: string;
-    data?: string; // Base64 inline data
+    data?: string; // Base64 string for inline download
     contentType?: string;
   }[];
   assignedExperts?: string[];
@@ -134,4 +151,5 @@ export interface UseCase {
     text: string;
     timestamp: string;
   }[];
+  extendedInfo?: Record<string, any>;
 }

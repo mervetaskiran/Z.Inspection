@@ -21,6 +21,7 @@ interface UserDashboardProps {
   users: User[];
   onViewProject: (project: Project) => void;
   onStartEvaluation: (project: Project) => void;
+  onDeleteProject: (projectId: string) => void;
   onNavigate: (view: string) => void;
   onLogout: () => void;
 }
@@ -62,6 +63,7 @@ export function UserDashboard({
   users,
   onViewProject,
   onStartEvaluation,
+  onDeleteProject,
   onNavigate,
   onLogout,
 }: UserDashboardProps) {
@@ -350,6 +352,20 @@ export function UserDashboard({
                       Created{" "}
                       {new Date(project.createdAt).toLocaleDateString()}
                     </div>
+                  </div>
+
+                  {/* Delete action */}
+                  <div className="flex justify-end mt-3">
+                    <button
+                      onClick={() => {
+                        const confirmDelete = window.confirm("Delete this project? This cannot be undone.");
+                        if (!confirmDelete) return;
+                        onDeleteProject(project.id);
+                      }}
+                      className="text-sm text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               </div>

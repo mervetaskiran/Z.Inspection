@@ -28,9 +28,13 @@ const UserSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, required: true },
   isOnline: { type: Boolean, default: false },
-  lastSeen: { type: Date, default: Date.now }
+  lastSeen: { type: Date, default: Date.now },
+  preconditionApproved: { type: Boolean, default: false },
+  preconditionApprovedAt: { type: Date }
 });
 const User = mongoose.model('User', UserSchema);
+
+// NOTE: we will store whether the user has approved the precondition
 
 // Project
 const ProjectSchema = new mongoose.Schema({
@@ -134,7 +138,30 @@ const Tension = mongoose.model('Tension', TensionSchema);
 // Use Cases
 app.get('/api/use-cases', async (req, res) => { try { const useCases = await UseCase.find(); res.json(useCases); } catch (err) { res.status(500).json({ error: err.message }); }});
 app.get('/api/use-cases/:id', async (req, res) => { try { const useCase = await UseCase.findById(req.params.id); if (!useCase) return res.status(404).json({ error: 'Not found' }); res.json(useCase); } catch (err) { res.status(500).json({ error: err.message }); }});
+// DEBUG route: show findById and attempt findByIdAndDelete but don't delete
+app.get('/api/debug/use-cases/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const found = await UseCase.findById(id);
+    const foundByQuery = await UseCase.findOne({ _id: id });
+    return res.json({ found: !!found, foundByQuery: !!foundByQuery, idType: typeof id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.post('/api/use-cases', async (req, res) => { try { const useCase = new UseCase(req.body); await useCase.save(); res.json(useCase); } catch (err) { res.status(500).json({ error: err.message }); }});
+app.delete('/api/use-cases/:id', async (req, res) => {
+  try {
+    const deletedUseCase = await UseCase.findByIdAndDelete(req.params.id);
+    if (!deletedUseCase) {
+      return res.status(404).json({ error: 'Use case not found' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Add supporting files to a use case (files should be sent as base64 data)
 app.post('/api/use-cases/:id/supporting-files', async (req, res) => {
   try {
@@ -199,6 +226,28 @@ app.post('/api/tensions', async (req, res) => {
     res.json(tension);
   } catch (err) {
     console.error("❌ Tension Ekleme Hatası:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tension getir (id ile)
+app.get('/api/tensions/id/:id', async (req, res) => {
+  try {
+    const tension = await Tension.findById(req.params.id);
+    if (!tension) return res.status(404).json({ error: 'Not found' });
+    res.json(tension);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tension sil
+app.delete('/api/tensions/:id', async (req, res) => {
+  try {
+    const deleted = await Tension.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -297,8 +346,37 @@ app.get('/api/evaluations', async (req, res) => {
 // General Routes
 app.post('/api/register', async (req, res) => { try { const newUser = new User(req.body); await newUser.save(); res.json(newUser); } catch (err) { res.status(500).json({ error: err.message }); }});
 app.post('/api/login', async (req, res) => { const user = await User.findOne({ email: req.body.email, password: req.body.password, role: req.body.role }); if (user) res.json(user); else res.status(401).json({ message: "Invalid credentials" });});
+// Mark user's precondition as approved (server-side)
+app.post('/api/users/:id/precondition-approval', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { preconditionApproved: true, preconditionApprovedAt: new Date() },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    // Do not expose password
+    const userObj = user.toObject();
+    delete userObj.password;
+    res.json(userObj);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get('/api/projects', async (req, res) => { const projects = await Project.find(); res.json(projects); });
 app.post('/api/projects', async (req, res) => { const project = new Project(req.body); await project.save(); res.json(project); });
+app.delete('/api/projects/:id', async (req, res) => {
+  try {
+    const deletedProject = await Project.findByIdAndDelete(req.params.id);
+    if (!deletedProject) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get('/api/users', async (req, res) => { const users = await User.find({}, '-password'); res.json(users); });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

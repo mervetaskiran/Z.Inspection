@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'; // useRef eklendi
+import React, { useState, useRef, useEffect } from 'react'; // useRef eklendi
 import { ArrowLeft, Download, Trash2, Plus, FileText, Calendar, User as UserIcon, Send, Upload, Check } from 'lucide-react';
 import { Tension, User, Evidence } from '../types';
 
@@ -21,6 +21,24 @@ export function TensionDetail({ tension: initialTension, currentUser, users, onB
   const [commentText, setCommentText] = useState('');
   
   const creator = users.find(u => u.id === tension.createdBy || u.id === (tension as any).uploadedBy);
+
+  // Always fetch latest tension (including evidences) when page opens
+  useEffect(() => {
+    const fetchTension = async () => {
+      try {
+        const id = tension.id || (tension as any)._id;
+        const response = await fetch(`http://localhost:5000/api/tensions/id/${id}`);
+        if (response.ok) {
+          const fresh = await response.json();
+          setTension((prev) => ({ ...prev, ...fresh }));
+        }
+      } catch (error) {
+        console.error("Tension reload failed:", error);
+      }
+    };
+    fetchTension();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tension.id, (tension as any)._id]);
 
   // --- YORUM GÖNDERME ---
   const handlePostComment = async () => {
@@ -81,9 +99,35 @@ export function TensionDetail({ tension: initialTension, currentUser, users, onB
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="px-6 py-4">
-          <div className="flex items-center space-x-4">
-            <button onClick={onBack} className="flex items-center text-gray-600 hover:text-gray-800">
-              <ArrowLeft className="h-4 w-4 mr-1" /> Back to Tensions
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button onClick={onBack} className="flex items-center text-gray-600 hover:text-gray-800">
+                <ArrowLeft className="h-4 w-4 mr-1" /> Back to Tensions
+              </button>
+            </div>
+            <button
+              onClick={async () => {
+                const confirmDelete = window.confirm("Delete this tension? This cannot be undone.");
+                if (!confirmDelete) return;
+                try {
+                  const id = tension.id || (tension as any)._id;
+                  const response = await fetch(`http://localhost:5000/api/tensions/${id}`, { method: 'DELETE' });
+                  if (response.ok) {
+                    alert("Tension deleted.");
+                    onBack();
+                  } else {
+                    const err = await response.json();
+                    alert(err.error || "Delete failed.");
+                  }
+                } catch (error) {
+                  console.error(error);
+                  alert("Cannot delete tension right now.");
+                }
+              }}
+              className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4 inline mr-1" />
+              Delete
             </button>
           </div>
         </div>
@@ -139,16 +183,48 @@ export function TensionDetail({ tension: initialTension, currentUser, users, onB
                         </div>
                       </div>
                       
-                      {ev.fileData && (
-                        <a 
-                          href={ev.fileData} 
-                          download={ev.fileName || "download"}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded flex items-center justify-center border border-transparent hover:border-blue-100"
-                          title="Download File"
-                        >
-                          <Download className="h-5 w-5" />
-                        </a>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (ev.fileData) {
+                            try {
+                              const dataUrl = ev.fileData as string;
+                              const hasPrefix = dataUrl.startsWith('data:');
+                              const [mimePart, base64Part] = hasPrefix
+                                ? dataUrl.split(',')
+                                : ['data:application/octet-stream;base64', dataUrl];
+                              const mime = hasPrefix ? mimePart.split(';')[0].replace('data:', '') : 'application/octet-stream';
+                              const byteString = atob(base64Part || '');
+                              const bytes = new Uint8Array(byteString.length);
+                              for (let i = 0; i < byteString.length; i++) {
+                                bytes[i] = byteString.charCodeAt(i);
+                              }
+                              const blob = new Blob([bytes], { type: mime });
+                              const url = URL.createObjectURL(blob);
+                              const link = document.createElement('a');
+                              link.href = url;
+                              link.download = ev.fileName || 'evidence';
+                              link.click();
+                              URL.revokeObjectURL(url);
+                            } catch (err) {
+                              console.error('Download error:', err);
+                              alert('Unable to download this file.');
+                            }
+                          } else if (ev.fileUrl) {
+                            window.open(ev.fileUrl, '_blank');
+                          }
+                        }}
+                        className={`px-3 py-2 text-sm font-medium rounded-lg border flex items-center space-x-2 ${
+                          ev.fileData || ev.fileUrl
+                            ? 'text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-300'
+                            : 'text-gray-400 border-gray-200 cursor-not-allowed'
+                        }`}
+                        title={ev.fileData || ev.fileUrl ? "Download file" : "File not available"}
+                        disabled={!ev.fileData && !ev.fileUrl}
+                      >
+                        <Download className="h-4 w-4" />
+                        <span>Download</span>
+                      </button>
                     </div>
                   </div>
                  );
@@ -236,11 +312,11 @@ function AddEvidenceModal({ onClose, onAdd }: any) {
     }
   };
 
-  const convertBase64 = (file: File) => {
+  const convertBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const fileReader = new FileReader();
       fileReader.readAsDataURL(file);
-      fileReader.onload = () => resolve(fileReader.result);
+      fileReader.onload = () => resolve(fileReader.result as string);
       fileReader.onerror = (error) => reject(error);
     });
   };
@@ -248,7 +324,7 @@ function AddEvidenceModal({ onClose, onAdd }: any) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    let base64File = null;
+    let base64File: string | null = null;
     if (file) {
       base64File = await convertBase64(file);
     }

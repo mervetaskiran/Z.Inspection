@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowLeft, Clock, TrendingUp, Users, FileText, MessageCircle, AlertCircle, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Clock, TrendingUp, Users, FileText, MessageCircle, AlertCircle, CheckCircle, Download } from 'lucide-react';
 import { UseCase, User } from '../types';
 
 interface UseCaseDetailProps {
@@ -22,8 +22,74 @@ const statusLabels = {
 };
 
 export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDetailProps) {
-  const isOwner = useCase.ownerId === currentUser.id;
-  const assignedExperts = users.filter(u => useCase.assignedExperts?.includes(u.id));
+  const [uc, setUc] = useState<UseCase>(useCase);
+  useEffect(() => setUc(useCase), [useCase]);
+
+  const isOwner = uc.ownerId === currentUser.id;
+  const assignedExperts = users.filter(u => uc.assignedExperts?.includes(u.id));
+
+  const [uploading, setUploading] = useState(false);
+
+  const handleDownload = (file: { name: string; data?: string; url?: string; contentType?: string }) => {
+    if (file.data) {
+      const link = document.createElement('a');
+      link.href = file.data;
+      link.download = file.name;
+      link.click();
+    } else if (file.url) {
+      window.open(file.url, '_blank');
+    } else {
+      alert('File is not available.');
+    }
+  };
+
+  // Owner file upload handler
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    if (!uc || !uc.id) return alert('Use case not ready');
+
+    const toUpload: Array<{ name: string; data?: string; contentType?: string }> = [];
+    setUploading(true);
+
+    const readFileAsDataUrl = (f: File) => new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('File read error'));
+      reader.readAsDataURL(f);
+    });
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const dataUrl = await readFileAsDataUrl(f);
+        toUpload.push({ name: f.name, data: dataUrl, contentType: f.type });
+      }
+
+      const res = await fetch(`http://127.0.0.1:5000/api/use-cases/${uc.id}/supporting-files`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: toUpload })
+      });
+
+      if (res.ok) {
+        const updatedFiles = await res.json();
+        setUc(prev => ({ ...prev, supportingFiles: updatedFiles } as UseCase));
+        alert('Files uploaded successfully.');
+      } else {
+        const err = await res.json();
+        console.error('Upload failed', err);
+        alert('Upload failed.');
+      }
+    } catch (err) {
+      console.error('Upload error', err);
+      alert('Upload failed.');
+    } finally {
+      setUploading(false);
+      // reset input value if present
+      if (e.target) e.target.value = '';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -89,36 +155,59 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
             {/* Description */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h3 className="text-lg text-gray-900 mb-4">Description</h3>
-              <p className="text-gray-700 leading-relaxed">{useCase.description}</p>
+              <p className="text-gray-700 leading-relaxed">{uc.description}</p>
               
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <div className="text-gray-600 mb-1">Category</div>
-                    <div className="text-gray-900">{useCase.aiSystemCategory}</div>
+                    <div className="text-gray-900">{uc.aiSystemCategory}</div>
                   </div>
                   <div>
                     <div className="text-gray-600 mb-1">Created</div>
-                    <div className="text-gray-900">{new Date(useCase.createdAt).toLocaleDateString()}</div>
+                    <div className="text-gray-900">{new Date(uc.createdAt).toLocaleDateString()}</div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Supporting Files */}
-            {useCase.supportingFiles && useCase.supportingFiles.length > 0 && (
+            {uc.supportingFiles && uc.supportingFiles.length > 0 && (
               <div className="bg-white rounded-lg border border-gray-200 p-6">
                 <h3 className="text-lg text-gray-900 mb-4">Supporting Files</h3>
                 <div className="space-y-2">
-                  {useCase.supportingFiles.map((file, idx) => (
+                  {uc.supportingFiles.map((file, idx) => (
                     <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center">
                         <FileText className="h-5 w-5 text-gray-400 mr-3" />
                         <span className="text-sm text-gray-900">{file.name}</span>
                       </div>
-                      <button className="text-sm text-blue-600 hover:text-blue-800">Download</button>
+                      <button
+                        onClick={() => handleDownload(file)}
+                        className="text-sm text-blue-600 hover:text-blue-800 inline-flex items-center"
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        Download
+                      </button>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Upload area for owner */}
+            {isOwner && (
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg text-gray-900 mb-4">Upload Supporting Files</h3>
+                <div className="space-y-2">
+                  <input
+                    type="file"
+                    multiple
+                    onChange={handleFileInput}
+                    className="text-sm text-gray-700"
+                    disabled={uploading}
+                  />
+                  <div className="text-xs text-gray-500">Accepted: PDFs, images, docs. Max size configured server-side.</div>
                 </div>
               </div>
             )}

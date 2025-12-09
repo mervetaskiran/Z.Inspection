@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Folder, MessageSquare, Users, LogOut, Search, BarChart3, AlertTriangle, UserPlus, X, Link as LinkIcon, CheckCircle2 } from 'lucide-react';
+import { Plus, Folder, MessageSquare, Users, LogOut, Search, BarChart3, AlertTriangle, UserPlus, X, Link as LinkIcon, CheckCircle2, Trash2 } from 'lucide-react';
 import { Project, User, UseCase } from '../types';
 
 interface AdminDashboardEnhancedProps {
@@ -10,6 +10,7 @@ interface AdminDashboardEnhancedProps {
   onViewProject: (project: Project) => void;
   onStartEvaluation: (project: Project) => void;
   onCreateProject: (project: Partial<Project>) => void;
+  onDeleteProject: (projectId: string) => void;
   onNavigate: (view: string) => void;
   onLogout: () => void;
 }
@@ -40,6 +41,7 @@ export function AdminDashboardEnhanced({
   onViewProject,
   onStartEvaluation,
   onCreateProject,
+  onDeleteProject,
   onNavigate,
   onLogout
 }: AdminDashboardEnhancedProps) {
@@ -156,6 +158,7 @@ export function AdminDashboardEnhanced({
             onViewProject={onViewProject}
             riskLevels={riskLevels}
             onCreateNew={() => setActiveTab('project-creation')}
+            onDeleteProject={onDeleteProject}
           />
         )}
 
@@ -224,7 +227,7 @@ export function AdminDashboardEnhanced({
 
 // --- SUB COMPONENTS ---
 
-function DashboardTab({ projects, searchQuery, setSearchQuery, onViewProject, riskLevels, onCreateNew }: any) {
+function DashboardTab({ projects, searchQuery, setSearchQuery, onViewProject, riskLevels, onCreateNew, onDeleteProject }: any) {
   return (
     <>
       <div className="bg-white border-b border-gray-200 px-8 py-6">
@@ -293,6 +296,19 @@ function DashboardTab({ projects, searchQuery, setSearchQuery, onViewProject, ri
                   </h3>
                   <p className="text-sm text-gray-500 line-clamp-2 h-10">{project.shortDescription}</p>
                 </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const confirmed = window.confirm(`Delete project "${project.title}"?`);
+                    if (confirmed) {
+                      onDeleteProject(project.id);
+                    }
+                  }}
+                  className="ml-3 inline-flex items-center px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </button>
               </div>
 
               <div className="flex items-center space-x-2 mb-4">

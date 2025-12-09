@@ -7,9 +7,10 @@ interface TensionCardProps {
   currentUser: User;
   onVote: (tensionId: string, voteType: 'agree' | 'disagree') => void;
   onCommentClick: (tension: Tension) => void;
+  onDelete?: (tensionId: string) => void;
 }
 
-export function TensionCard({ tension, currentUser, onVote, onCommentClick }: TensionCardProps) {
+export function TensionCard({ tension, currentUser, onVote, onCommentClick, onDelete }: TensionCardProps) {
   const userVote = tension.userVote; 
   const agreeCount = tension.consensus?.agree || 0;
   const disagreeCount = tension.consensus?.disagree || 0;
@@ -39,9 +40,17 @@ export function TensionCard({ tension, currentUser, onVote, onCommentClick }: Te
             {new Date(tension.createdAt).toLocaleDateString()}
           </span>
         </div>
-        <button className="text-gray-400 hover:text-gray-600">
-          <MoreVertical className="h-4 w-4" />
-        </button>
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(tension.id || (tension as any)._id);
+            }}
+            className="text-red-500 hover:text-red-700 text-xs font-medium"
+          >
+            Delete
+          </button>
+        )}
       </div>
 
       {/* Başlık ve Açıklama */}

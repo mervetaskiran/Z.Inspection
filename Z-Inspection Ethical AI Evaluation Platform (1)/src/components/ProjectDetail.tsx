@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Calendar, Users as UsersIcon, Target, BarChart3, Plus,
-  FileText, Shield, MessageSquare, User as UserIconLucide, GitBranch
+  FileText, Shield, MessageSquare, User as UserIconLucide, GitBranch, Download
 } from 'lucide-react';
 import { Project, User, Tension, UseCaseOwner, UseCase } from '../types'; // UseCase import etmeyi unutmayın
 import { UseCaseOwners } from './UseCaseOwners';
@@ -96,6 +96,8 @@ export function ProjectDetail({
         claimStatement: data.claimStatement,
         description: data.description,
         evidenceDescription: data.evidenceDescription,
+        evidenceFileName: data.evidenceFileName,
+        evidenceFileData: data.evidenceFileData,
         severity: severityString,
         status: 'ongoing',
         createdBy: currentUser.id
@@ -116,6 +118,25 @@ export function ProjectDetail({
       }
     } catch (error) {
       alert("❌ Cannot connect to server.");
+    }
+  };
+
+  const handleDeleteTension = async (tensionId: string) => {
+    const confirmed = window.confirm("Delete this tension? This cannot be undone.");
+    if (!confirmed) return;
+    try {
+      const response = await fetch(`http://localhost:5000/api/tensions/${tensionId}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        await fetchTensions();
+      } else {
+        const err = await response.json();
+        alert(err.error || "Failed to delete tension.");
+      }
+    } catch (error) {
+      console.error("Delete tension error:", error);
+      alert("Cannot connect to server.");
     }
   };
 
@@ -141,6 +162,73 @@ export function ProjectDetail({
 
   // Use Case Owner ismini bulma
   const useCaseOwnerName = linkedUseCase ? users.find(u => u.id === linkedUseCase.ownerId)?.name : 'Unknown';
+  const handleDownload = (file: { name: string; data?: string; url?: string; contentType?: string }) => {
+    if (file.data) {
+      const link = document.createElement('a');
+      link.href = file.data;
+      link.download = file.name;
+      link.click();
+    } else if (file.url) {
+      window.open(file.url, '_blank');
+    } else {
+      alert('File is not available.');
+    }
+  };
+
+  // Download full use case details (JSON) and then any supporting files
+  const handleDownloadUseCase = (forUser?: User) => {
+    if (!linkedUseCase) {
+      alert('No linked use case to download.');
+      return;
+    }
+
+    try {
+      const details = {
+        id: linkedUseCase.id || (linkedUseCase as any)._id,
+        title: linkedUseCase.title,
+        description: linkedUseCase.description,
+        aiSystemCategory: linkedUseCase.aiSystemCategory,
+        status: linkedUseCase.status,
+        ownerId: linkedUseCase.ownerId,
+        assignedExperts: linkedUseCase.assignedExperts,
+        createdAt: linkedUseCase.createdAt,
+        extendedInfo: linkedUseCase.extendedInfo,
+      };
+
+      const blob = new Blob([JSON.stringify(details, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeTitle = (linkedUseCase.title || 'usecase').replace(/[^a-z0-9-_]/gi, '_');
+      link.download = `${safeTitle}-details.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      // Then download supporting files (if any)
+      if (linkedUseCase.supportingFiles && linkedUseCase.supportingFiles.length > 0) {
+        linkedUseCase.supportingFiles.forEach((file: any, idx: number) => {
+          // small timeout to let browser process sequential downloads
+          setTimeout(() => {
+            if (file.data) {
+              const a = document.createElement('a');
+              a.href = file.data;
+              a.download = file.name || `file-${idx}`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+            } else if (file.url) {
+              window.open(file.url, '_blank');
+            }
+          }, idx * 250);
+        });
+      }
+    } catch (err) {
+      console.error('Download error', err);
+      alert('Unable to prepare download.');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -183,6 +271,38 @@ export function ProjectDetail({
           <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
             <BarChart3 className="h-5 w-5 text-gray-400 mr-3" />
             <div><div className="text-xs text-gray-600">Tensions</div><div className="text-sm font-medium">{tensions.length} total</div></div>
+          </div>
+        </div>
+
+        {/* Assigned Members with download button */}
+        <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
+          <h4 className="text-sm font-medium text-gray-700 mb-3">Assigned Members</h4>
+          <div className="space-y-2">
+            {assignedUserDetails.length > 0 ? (
+              assignedUserDetails.map((u) => (
+                <div key={u.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center mr-3">{u.name?.charAt(0) || 'U'}</div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{u.name}</div>
+                      <div className="text-xs text-gray-500">{u.role}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <button
+                      onClick={() => handleDownloadUseCase(u)}
+                      disabled={!linkedUseCase}
+                      className={`inline-flex items-center px-3 py-1.5 text-sm rounded ${linkedUseCase ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-300 cursor-not-allowed'}`}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Use Case
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-gray-500">No members assigned.</div>
+            )}
           </div>
         </div>
 
@@ -230,6 +350,7 @@ export function ProjectDetail({
                         currentUser={currentUser}
                         onVote={handleVote}
                         onCommentClick={(t) => onViewTension?.(t)}
+                        onDelete={handleDeleteTension}
                       />
                     ))}
                   </div>
@@ -267,6 +388,29 @@ export function ProjectDetail({
                             </p>
                         </div>
 
+                        {linkedUseCase.supportingFiles && linkedUseCase.supportingFiles.length > 0 && (
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-3">Supporting Files</h3>
+                            <div className="space-y-2">
+                              {linkedUseCase.supportingFiles.map((file, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                                  <div className="flex items-center">
+                                    <FileText className="h-5 w-5 text-gray-400 mr-3" />
+                                    <span className="text-sm text-gray-900">{file.name}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleDownload(file as any)}
+                                    className="text-sm text-blue-600 hover:text-blue-800 inline-flex items-center"
+                                  >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    Download
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-gray-50 p-4 rounded-lg border">
                                 <h4 className="text-sm font-bold text-gray-500 uppercase mb-2">Owner</h4>
@@ -287,7 +431,9 @@ export function ProjectDetail({
                     <div className="text-center py-12 text-gray-500 border rounded-lg">
                         <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                         <p>No linked Use Case found.</p>
-                        <p className="text-xs text-gray-400">ID: {project.useCase || 'None'}</p>
+                        <p className="text-xs text-gray-400">
+                          ID: {typeof project.useCase === 'string' ? project.useCase : project.useCase?.url || 'None'}
+                        </p>
                     </div>
                   )}
               </div>

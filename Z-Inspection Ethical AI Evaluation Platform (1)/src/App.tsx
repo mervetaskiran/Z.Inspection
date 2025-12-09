@@ -101,9 +101,10 @@ function App() {
         };
 
         setCurrentUser(userFrontend);
-
         if (role !== "admin") {
-          setNeedsPrecondition(true);
+          // Server provides `preconditionApproved` flag on the user object
+          const approved = (userFrontend as any).preconditionApproved;
+          setNeedsPrecondition(!Boolean(approved));
         }
       } else {
         alert("Giriş başarısız! Bilgileri kontrol edin.");
@@ -115,7 +116,25 @@ function App() {
   };
 
   const handlePreconditionApproval = () => {
-    setNeedsPrecondition(false);
+    // Call server to persist approval
+    if (!currentUser?.id) return;
+    (async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:5000/api/users/${currentUser.id}/precondition-approval`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (res.ok) {
+          const updatedUser = await res.json();
+          setCurrentUser(prev => prev ? { ...prev, ...updatedUser } : prev);
+          setNeedsPrecondition(false);
+        } else {
+          console.error('Approval save failed');
+        }
+      } catch (err) {
+        console.error('Approval error', err);
+      }
+    })();
   };
 
   const handleLogout = () => {
@@ -199,6 +218,24 @@ function App() {
     }
   };
 
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        setProjects((prev) => prev.filter((project) => project.id !== projectId));
+        alert("Project deleted successfully.");
+      } else {
+        alert("Failed to delete the project.");
+      }
+    } catch (error) {
+      console.error("Project deletion error:", error);
+      alert("Could not connect to the server.");
+    }
+  };
+
   const handleCreateUseCase = async (useCaseData: Partial<UseCase>) => {
     try {
       const response = await fetch('http://127.0.0.1:5000/api/use-cases', {
@@ -210,7 +247,7 @@ function App() {
           status: 'assigned',
           progress: 0,
           assignedExperts: [],
-          supportingFiles: []
+          supportingFiles: useCaseData.supportingFiles || []
         })
       });
 
@@ -227,6 +264,24 @@ function App() {
     } catch (error) {
       console.error("Use Case oluşturma hatası:", error);
       alert("Sunucuya bağlanılamadı.");
+    }
+  };
+
+  const handleDeleteUseCase = async (useCaseId: string) => {
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/api/use-cases/${useCaseId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        setUseCases((prev) => prev.filter((uc) => uc.id !== useCaseId));
+        alert("Use case deleted successfully.");
+      } else {
+        alert("Failed to delete the use case.");
+      }
+    } catch (error) {
+      console.error("Use case deletion error:", error);
+      alert("Could not connect to the server.");
     }
   };
 
@@ -346,6 +401,7 @@ function App() {
               useCases={useCases}
               onCreateUseCase={handleCreateUseCase}
               onViewUseCase={handleViewUseCase}
+              onDeleteUseCase={handleDeleteUseCase}
               onLogout={handleLogout}
             />
           );
@@ -359,6 +415,7 @@ function App() {
               onViewProject={handleViewProject}
               onStartEvaluation={handleStartEvaluation}
               onCreateProject={handleCreateProject}
+              onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
               onLogout={handleLogout}
             />
@@ -371,7 +428,9 @@ function App() {
               users={users}
               onViewProject={handleViewProject}
               onStartEvaluation={handleStartEvaluation}
+              onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
+              onViewUseCase={handleViewUseCase}
               onLogout={handleLogout}
             />
           );
