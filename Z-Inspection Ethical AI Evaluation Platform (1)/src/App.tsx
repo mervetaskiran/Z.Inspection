@@ -18,6 +18,7 @@ import {
   UseCaseOwner,
   UseCase,
 } from "./types";
+import { api } from "./api";
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -38,7 +39,7 @@ function App() {
     // 1. Projeleri Çek
     const fetchProjects = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:5000/api/projects');
+        const response = await fetch(api('/api/projects'));
         if (response.ok) {
           const data = await response.json();
           const formattedProjects = data.map((p: any) => ({ ...p, id: p._id }));
@@ -50,7 +51,7 @@ function App() {
     // 2. Kullanıcıları Çek
     const fetchUsers = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:5000/api/users');
+        const response = await fetch(api('/api/users'));
         if (response.ok) {
           const data = await response.json();
           const formattedUsers = data.map((u: any) => ({ ...u, id: u._id }));
@@ -62,7 +63,7 @@ function App() {
     // 3. Use Case'leri Çek (İŞTE BU SATIR VERİLERİN GELMESİNİ SAĞLAR)
     const fetchUseCases = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:5000/api/use-cases');
+        const response = await fetch(api('/api/use-cases'));
         if (response.ok) {
           const data = await response.json();
 
@@ -87,7 +88,7 @@ function App() {
     role: string,
   ) => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/login', {
+      const response = await fetch(api('/api/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, role })
@@ -187,7 +188,7 @@ function App() {
   // --- CREATION HANDLERS (BACKEND'E KAYIT) ---
   const handleCreateProject = async (projectData: Partial<Project>) => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/projects', {
+      const response = await fetch(api('/api/projects'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -238,7 +239,7 @@ function App() {
 
   const handleCreateUseCase = async (useCaseData: Partial<UseCase>) => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/use-cases', {
+      const response = await fetch(api('/api/use-cases'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -290,7 +291,7 @@ function App() {
     if (!selectedProject) return;
     
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/tensions', {
+      const response = await fetch(api('/api/tensions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

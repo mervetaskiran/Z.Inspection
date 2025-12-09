@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'; // useRef eklendi
 import { ArrowLeft, Download, Trash2, Plus, FileText, Calendar, User as UserIcon, Send, Upload, Check } from 'lucide-react';
 import { Tension, User, Evidence } from '../types';
+import { api } from '../api';
 
 interface TensionDetailProps {
   tension: Tension;
@@ -45,7 +46,7 @@ export function TensionDetail({ tension: initialTension, currentUser, users, onB
     if (!commentText.trim()) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/tensions/${tension.id || (tension as any)._id}/comment`, {
+      const response = await fetch(api(`/api/tensions/${tension.id || (tension as any)._id}/comment`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -71,7 +72,7 @@ export function TensionDetail({ tension: initialTension, currentUser, users, onB
   // --- EVIDENCE EKLEME ---
   const handleAddEvidence = async (newEvidence: any) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/tensions/${tension.id || (tension as any)._id}/evidence`, {
+      const response = await fetch(api(`/api/tensions/${tension.id || (tension as any)._id}/evidence`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

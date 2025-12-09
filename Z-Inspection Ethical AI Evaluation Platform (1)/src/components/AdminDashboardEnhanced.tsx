@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Folder, MessageSquare, Users, LogOut, Search, BarChart3, AlertTriangle, UserPlus, X, Link as LinkIcon, CheckCircle2, Trash2 } from 'lucide-react';
 import { Project, User, UseCase } from '../types';
+import { api } from '../api';
 
 interface AdminDashboardEnhancedProps {
   currentUser: User;
@@ -200,7 +201,7 @@ export function AdminDashboardEnhanced({
           }}
           onAssign={async (expertIds, notes) => {
               try {
-               const response = await fetch(`http://127.0.0.1:5000/api/use-cases/${selectedUseCaseForAssignment.id}/assign`, {
+               const response = await fetch(api(`/api/use-cases/${selectedUseCaseForAssignment.id}/assign`), {
                  method: 'PUT',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({

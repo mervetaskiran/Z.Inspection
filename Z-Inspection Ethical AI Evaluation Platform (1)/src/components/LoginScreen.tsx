@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User, CheckCircle2, Users, FileText, BarChart3 } from 'lucide-react';
+import { api } from '../api';
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string, role: string) => Promise<void> | void;
@@ -43,7 +44,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
       }
       
       try {
-        const response = await fetch('http://127.0.0.1:5000/api/register', {
+        const response = await fetch(api('/api/register'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

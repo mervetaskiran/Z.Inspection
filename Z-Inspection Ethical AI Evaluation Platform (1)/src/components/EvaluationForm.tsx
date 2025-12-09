@@ -6,6 +6,7 @@ import {
 
 import { Project, User, Question, StageKey, QuestionType } from '../types';
 import { getQuestionsByRole } from '../data/questions'; 
+import { api } from '../api';
 
 interface EvaluationFormProps {
   project: Project;
@@ -26,8 +27,6 @@ const roleColors: Record<string, string> = {
   'legal-expert': '#B45309'
 };
 
-const API_BASE_URL = 'http://localhost:5000/api'; // Backend adresi
-
 export function EvaluationForm({ project, currentUser, onBack, onSubmit }: EvaluationFormProps) {
   // Projenin mevcut stage'ini başlangıç değeri olarak alabiliriz veya 'set-up' ile başlatabiliriz.
   // Ancak kullanıcının kaldığı yerden devam etmesi için 'set-up' ile başlatıp veriyi çekmek daha güvenli.
@@ -35,6 +34,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   
   const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [questionPriorities, setQuestionPriorities] = useState<Record<string, RiskLevel>>({}); // Her soru için önem derecesi
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('medium');
   const [customQuestions, setCustomQuestions] = useState<Question[]>([]);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
@@ -56,11 +56,12 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     const fetchEvaluation = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/evaluations?projectId=${project._id}&userId=${currentUser._id}&stage=${currentStage}`);
+        const response = await fetch(api(`/api/evaluations?projectId=${project._id}&userId=${currentUser._id}&stage=${currentStage}`));
         if (response.ok) {
           const data = await response.json();
           // Eğer veritabanında cevaplar varsa state'e yükle
           if (data.answers) setAnswers(data.answers);
+          if (data.questionPriorities) setQuestionPriorities(data.questionPriorities); // Soru önem derecelerini yükle
           if (data.riskLevel) setRiskLevel(data.riskLevel as RiskLevel);
           // Status completed ise draft olmadığını belirt
           if (data.status === 'completed') setIsDraft(false);
@@ -85,7 +86,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const saveEvaluation = async (status: 'draft' | 'completed' = 'draft') => {
     setSaving(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/evaluations`, {
+      const response = await fetch(api('/api/evaluations'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,6 +94,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
           userId: currentUser._id,
           stage: currentStage,
           answers: answers,
+          questionPriorities: questionPriorities, // Her soru için önem derecelerini kaydet
           riskLevel: riskLevel,
           status: status
         })
@@ -164,6 +166,11 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
 
   const handleAnswerChange = (questionId: string, answer: any) => {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }));
+    setIsDraft(true);
+  };
+
+  const handlePriorityChange = (questionId: string, priority: RiskLevel) => {
+    setQuestionPriorities((prev) => ({ ...prev, [questionId]: priority }));
     setIsDraft(true);
   };
 
@@ -428,6 +435,64 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                                 ))}
                             </div>
                         )}
+
+                        {/* Önem Derecesi Belirleme - Her Soru İçin */}
+                        <div className="mt-8 pt-6 border-t border-gray-200">
+                            <div className="flex items-center gap-2 mb-4">
+                                <AlertTriangle className="w-5 h-5 text-orange-500" />
+                                <h3 className="text-lg font-semibold text-gray-900">Importance Level for This Question</h3>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 max-w-2xl">
+                                {(['low', 'medium', 'high'] as RiskLevel[]).map((level) => {
+                                    const isSelected = questionPriorities[activeQuestion.id] === level;
+                                    return (
+                                        <label
+                                            key={level}
+                                            className={`relative flex flex-col items-center p-6 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
+                                                isSelected
+                                                    ? level === 'low'
+                                                        ? 'border-green-500 bg-green-50 shadow-md'
+                                                        : level === 'medium'
+                                                        ? 'border-yellow-500 bg-yellow-50 shadow-md'
+                                                        : 'border-red-500 bg-red-50 shadow-md'
+                                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name={`priority-${activeQuestion.id}`}
+                                                value={level}
+                                                checked={isSelected}
+                                                onChange={() => handlePriorityChange(activeQuestion.id, level)}
+                                                className="hidden"
+                                            />
+                                            <div
+                                                className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-colors ${
+                                                    isSelected
+                                                        ? level === 'low'
+                                                            ? 'bg-green-100 text-green-600'
+                                                            : level === 'medium'
+                                                            ? 'bg-yellow-100 text-yellow-600'
+                                                            : 'bg-red-100 text-red-600'
+                                                        : 'bg-gray-100 text-gray-400'
+                                                }`}
+                                            >
+                                                {level === 'low' && <CheckCircle className="w-6 h-6" />}
+                                                {level === 'medium' && <AlertTriangle className="w-6 h-6" />}
+                                                {level === 'high' && <XCircle className="w-6 h-6" />}
+                                            </div>
+                                            <span
+                                                className={`text-sm font-bold capitalize ${
+                                                    isSelected ? 'text-gray-900' : 'text-gray-500'
+                                                }`}
+                                            >
+                                                {level}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
                 </div>
             ) : (

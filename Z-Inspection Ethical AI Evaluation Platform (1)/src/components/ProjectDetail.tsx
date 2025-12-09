@@ -7,6 +7,7 @@ import { Project, User, Tension, UseCaseOwner, UseCase } from '../types'; // Use
 import { UseCaseOwners } from './UseCaseOwners';
 import { TensionCard } from './TensionCard';
 import { AddTensionModal } from './AddTensionModal';
+import { api } from '../api';
 
 interface ProjectDetailProps {
   project: Project;
@@ -49,7 +50,7 @@ export function ProjectDetail({
   // Tensionları Getir
   const fetchTensions = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/tensions/${project.id}?userId=${currentUser.id}`);
+      const response = await fetch(api(`/api/tensions/${project.id}?userId=${currentUser.id}`));
       if (response.ok) {
         const data = await response.json();
         const formattedData = data.map((t: any) => ({
@@ -70,7 +71,7 @@ export function ProjectDetail({
   const fetchUseCase = async () => {
     if (!project.useCase) return;
     try {
-        const response = await fetch(`http://localhost:5000/api/use-cases/${project.useCase}`);
+        const response = await fetch(api(`/api/use-cases/${project.useCase}`));
         if (response.ok) {
             const data = await response.json();
             setLinkedUseCase(data);
@@ -103,7 +104,7 @@ export function ProjectDetail({
         createdBy: currentUser.id
       };
 
-      const response = await fetch('http://localhost:5000/api/tensions', {
+      const response = await fetch(api('/api/tensions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -142,7 +143,7 @@ export function ProjectDetail({
 
   const handleVote = async (tensionId: string, voteType: 'agree' | 'disagree') => {
     try {
-      const response = await fetch(`http://localhost:5000/api/tensions/${tensionId}/vote`, {
+      const response = await fetch(api(`/api/tensions/${tensionId}/vote`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id, voteType }),

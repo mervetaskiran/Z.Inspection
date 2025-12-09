@@ -4,7 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 // --- GÜNCELLEME: Dosya yükleme limiti 300MB yapıldı ---
 app.use(express.json({ limit: '300mb' }));
@@ -12,7 +12,7 @@ app.use(express.urlencoded({ limit: '300mb', extended: true }));
 app.use(cors());
 
 // --- 1. VERİTABANI BAĞLANTISI ---
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin_merve:Sifre123@cluster0.tg8voq1.mongodb.net/zinspection?retryWrites=true&w=majority&appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI;
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('✅ MongoDB Atlas Bağlantısı Başarılı'))
@@ -90,6 +90,7 @@ const EvaluationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   stage: { type: String, required: true },
   answers: { type: Map, of: mongoose.Schema.Types.Mixed },
+  questionPriorities: { type: Map, of: String }, // Her soru için önem derecesi (low/medium/high)
   riskLevel: { type: String, default: 'medium' },
   status: { type: String, default: 'draft' },
   updatedAt: { type: Date, default: Date.now }
@@ -157,6 +158,21 @@ app.delete('/api/use-cases/:id', async (req, res) => {
       return res.status(404).json({ error: 'Use case not found' });
     }
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/use-cases/:id/assign', async (req, res) => {
+  try {
+    const { assignedExperts = [], adminNotes = '' } = req.body;
+    const updated = await UseCase.findByIdAndUpdate(
+      req.params.id,
+      { assignedExperts, adminNotes },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -326,10 +342,10 @@ app.post('/api/tensions/:id/evidence', async (req, res) => {
 // Evaluations
 app.post('/api/evaluations', async (req, res) => {
   try {
-    const { projectId, userId, stage, answers, riskLevel, status } = req.body;
+    const { projectId, userId, stage, answers, questionPriorities, riskLevel, status } = req.body;
     const evaluation = await Evaluation.findOneAndUpdate(
       { projectId, userId, stage },
-      { answers, riskLevel, status: status || 'draft', updatedAt: new Date() },
+      { answers, questionPriorities, riskLevel, status: status || 'draft', updatedAt: new Date() },
       { new: true, upsert: true }
     );
     res.json(evaluation);
