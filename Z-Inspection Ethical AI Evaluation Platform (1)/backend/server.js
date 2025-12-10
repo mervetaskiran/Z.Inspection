@@ -158,6 +158,7 @@ app.get('/api/debug/use-cases/:id', async (req, res) => {
   }
 });
 app.post('/api/use-cases', async (req, res) => { try { const useCase = new UseCase(req.body); await useCase.save(); res.json(useCase); } catch (err) { res.status(500).json({ error: err.message }); }});
+<<<<<<< Updated upstream
 app.delete('/api/use-cases/:id', async (req, res) => {
   try {
     const deletedUseCase = await UseCase.findByIdAndDelete(req.params.id);
@@ -170,6 +171,8 @@ app.delete('/api/use-cases/:id', async (req, res) => {
   }
 });
 
+=======
+>>>>>>> Stashed changes
 app.put('/api/use-cases/:id/assign', async (req, res) => {
   try {
     const { assignedExperts = [], adminNotes = '' } = req.body;
@@ -184,6 +187,7 @@ app.put('/api/use-cases/:id/assign', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+<<<<<<< Updated upstream
 
 // Add supporting files to a use case (files should be sent as base64 data)
 app.post('/api/use-cases/:id/supporting-files', async (req, res) => {
@@ -214,6 +218,8 @@ app.post('/api/use-cases/:id/supporting-files', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+=======
+>>>>>>> Stashed changes
 
 // Tensions - OLUŞTURMA (İlk evidence ile birlikte)
 app.post('/api/tensions', async (req, res) => {
@@ -365,10 +371,17 @@ app.post('/api/tensions/:id/evidence', async (req, res) => {
 // Evaluations
 app.post('/api/evaluations', async (req, res) => {
   try {
+<<<<<<< Updated upstream
     const { projectId, userId, stage, answers, questionPriorities, riskLevel, generalRisks, status } = req.body;
     const evaluation = await Evaluation.findOneAndUpdate(
       { projectId, userId, stage },
       { answers, questionPriorities, riskLevel, generalRisks: generalRisks || [], status: status || 'draft', updatedAt: new Date() },
+=======
+    const { projectId, userId, stage, answers, questionPriorities, riskLevel, status } = req.body;
+    const evaluation = await Evaluation.findOneAndUpdate(
+      { projectId, userId, stage },
+      { answers, questionPriorities, riskLevel, status: status || 'draft', updatedAt: new Date() },
+>>>>>>> Stashed changes
       { new: true, upsert: true }
     );
     res.json(evaluation);
