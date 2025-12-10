@@ -179,6 +179,7 @@ export function AdminDashboardEnhanced({
             users={users}
             useCases={useCases}
             onCreateProject={onCreateProject}
+            onViewProject={onViewProject}
           />
         )}
 
@@ -427,7 +428,7 @@ function UseCaseAssignmentsTab({ useCases, users, onAssignExperts }: any) {
   );
 }
 
-function ProjectCreationTab({ users, useCases = [], onCreateProject }: any) {
+function ProjectCreationTab({ users, useCases = [], onCreateProject, onViewProject }: any) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
@@ -444,7 +445,7 @@ function ProjectCreationTab({ users, useCases = [], onCreateProject }: any) {
   const [resultsUsage, setResultsUsage] = useState('');
   const [resultsSharing, setResultsSharing] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
 
     if (selectedTeam.length === 0) {
@@ -452,8 +453,38 @@ function ProjectCreationTab({ users, useCases = [], onCreateProject }: any) {
       return;
     }
 
+    // Project Context and Scope alanlarındaki soruları kontrol et
+    if (!requester.trim()) {
+      alert("Please fill in 'Who requested the inspection?' field.");
+      return;
+    }
+    if (!inspectionReason.trim()) {
+      alert("Please fill in 'Why carry out an inspection?' field.");
+      return;
+    }
+    if (!relevantFor.trim()) {
+      alert("Please fill in 'For whom is the inspection relevant?' field.");
+      return;
+    }
+    if (!isMandatory) {
+      alert("Please select 'Is it recommended or required (mandatory inspection)?' option.");
+      return;
+    }
+    if (!conditionsToAnalyze.trim()) {
+      alert("Please fill in 'What are the sufficient vs. necessary conditions that need to be analyzed?' field.");
+      return;
+    }
+    if (!resultsUsage.trim()) {
+      alert("Please fill in 'How are the inspection results to be used?' field.");
+      return;
+    }
+    if (!resultsSharing.trim()) {
+      alert("Please fill in 'Will the results be shared (public) or kept private?' field.");
+      return;
+    }
+
     // ⚠️ GÜNCELLENMİŞ onCreateProject çağrısı: inspectionContext eklendi
-    onCreateProject({
+    const newProject = await onCreateProject({
       title,
       shortDescription: description.substring(0, 100),
       fullDescription: description,
@@ -470,6 +501,11 @@ function ProjectCreationTab({ users, useCases = [], onCreateProject }: any) {
         resultsSharing
       }
     });
+
+    // Proje başarıyla oluşturulduysa, direkt o projenin sayfasına yönlendir
+    if (newProject && onViewProject) {
+      onViewProject(newProject);
+    }
 
     // Alanları temizle
     setTitle('');
@@ -595,47 +631,51 @@ function ProjectCreationTab({ users, useCases = [], onCreateProject }: any) {
 
               {/* Soru 1: Who requested the inspection? */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">1. Who requested the inspection?</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">1. Who requested the inspection? *</label>
                 <input
                   type="text"
                   value={requester}
                   onChange={(e) => setRequester(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Legal Department, Product Owner, Regulatory Body"
+                  required
                 />
               </div>
 
               {/* Soru 2: Why carry out an inspection? */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">2. Why carry out an inspection?</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">2. Why carry out an inspection? *</label>
                 <input
                   type="text"
                   value={inspectionReason}
                   onChange={(e) => setInspectionReason(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Compliance check, Risk mitigation, Public trust building"
+                  required
                 />
               </div>
 
               {/* Soru 3: For whom is the inspection relevant? */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">3. For whom is the inspection relevant?</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">3. For whom is the inspection relevant? *</label>
                 <input
                   type="text"
                   value={relevantFor}
                   onChange={(e) => setRelevantFor(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Internal auditors, Customers, Regulators"
+                  required
                 />
               </div>
 
               {/* Soru 4: Is it recommended or required (mandatory inspection)? */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">4. Is it recommended or required (mandatory inspection)?</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">4. Is it recommended or required (mandatory inspection)? *</label>
                 <select
                   value={isMandatory}
                   onChange={(e) => setIsMandatory(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  required
                 >
                   <option value="">Select one...</option>
                   <option value="recommended">Recommended</option>
@@ -645,37 +685,40 @@ function ProjectCreationTab({ users, useCases = [], onCreateProject }: any) {
 
               {/* Soru 5: What are the sufficient vs. necessary conditions that need to be analyzed? */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">5. What are the sufficient vs. necessary conditions that need to be analyzed?</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">5. What are the sufficient vs. necessary conditions that need to be analyzed? *</label>
                 <textarea
                   value={conditionsToAnalyze}
                   onChange={(e) => setConditionsToAnalyze(e.target.value)}
                   rows={2}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Minimum legal requirements (necessary), Best practice standards (sufficient)"
+                  required
                 />
               </div>
 
               {/* Soru 6: How are the inspection results to be used? */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">6. How are the inspection results to be used? (e.g. verification, certification, sanctions)</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">6. How are the inspection results to be used? (e.g. verification, certification, sanctions) *</label>
                 <input
                   type="text"
                   value={resultsUsage}
                   onChange={(e) => setResultsUsage(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Internal risk report, External certification for compliance"
+                  required
                 />
               </div>
 
               {/* Soru 7: Will the results be shared (public) or kept private? */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">7. Will the results be shared (public) or kept private? (If private, why?)</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">7. Will the results be shared (public) or kept private? (If private, why?) *</label>
                 <textarea
                   value={resultsSharing}
                   onChange={(e) => setResultsSharing(e.target.value)}
                   rows={2}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Public (for transparency), Private (due to sensitive trade secrets)"
+                  required
                 />
               </div>
             </div>
@@ -771,7 +814,7 @@ function AssignExpertsModal({ useCase, users, onClose, onAssign }: AssignExperts
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: any) => {
     e.preventDefault();
     onAssign(selectedExperts, adminNotes);
   };

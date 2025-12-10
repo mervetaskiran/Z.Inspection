@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, Save, Send, Plus, AlertTriangle, CheckCircle, XCircle, 
-  Info, ChevronRight, ChevronLeft, Loader2 
+  Info, ChevronRight, ChevronLeft, Loader2, Trash2, Upload 
 } from 'lucide-react';
 
-import { Project, User, Question, StageKey, QuestionType } from '../types';
+import { Project, User, Question, StageKey, QuestionType, UseCase, EthicalPrinciple } from '../types';
 import { getQuestionsByRole } from '../data/questions'; 
 import { api } from '../api';
+import { EthicalTensionSelector } from './EthicalTensionSelector';
 
 interface EvaluationFormProps {
   project: Project;
@@ -41,6 +42,18 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const [isDraft, setIsDraft] = useState(true);
   const [loading, setLoading] = useState(false); // Yükleniyor durumu
   const [saving, setSaving] = useState(false);   // Kaydediliyor durumu
+  const [linkedUseCase, setLinkedUseCase] = useState<UseCase | null>(null);
+  const [generalRisks, setGeneralRisks] = useState<Array<{ id: string; title: string; description: string }>>([]);
+  const [showReviewScreen, setShowReviewScreen] = useState(false);
+  
+  // Tension form state
+  const [principle1, setPrinciple1] = useState<EthicalPrinciple | undefined>();
+  const [principle2, setPrinciple2] = useState<EthicalPrinciple | undefined>();
+  const [claim, setClaim] = useState('');
+  const [argument, setArgument] = useState('');
+  const [evidence, setEvidence] = useState('');
+  const [severity, setSeverity] = useState<number>(2);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const roleKey = currentUser.role.toLowerCase().replace(' ', '-') || 'admin';
   const roleColor = roleColors[roleKey] || '#3B82F6';
@@ -51,18 +64,33 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     return allQuestions.filter(q => q.stage === currentStage);
   }, [roleKey, currentStage, customQuestions]);
 
+  // Assess stage'indeki tüm soruları almak için
+  const assessQuestions = useMemo(() => {
+    const roleQuestions = getQuestionsByRole(roleKey);
+    const allQuestions = [...roleQuestions, ...customQuestions];
+    return allQuestions.filter(q => q.stage === 'assess');
+  }, [roleKey, customQuestions]);
+
   // --- 1. VERİ ÇEKME (FETCH DATA) ---
   useEffect(() => {
     const fetchEvaluation = async () => {
       setLoading(true);
       try {
-        const response = await fetch(api(`/api/evaluations?projectId=${project._id}&userId=${currentUser._id}&stage=${currentStage}`));
+        const response = await fetch(api(`/api/evaluations?projectId=${project.id || (project as any)._id}&userId=${currentUser.id || (currentUser as any)._id}&stage=${currentStage}`));
         if (response.ok) {
           const data = await response.json();
           // Eğer veritabanında cevaplar varsa state'e yükle
           if (data.answers) setAnswers(data.answers);
           if (data.questionPriorities) setQuestionPriorities(data.questionPriorities); // Soru önem derecelerini yükle
           if (data.riskLevel) setRiskLevel(data.riskLevel as RiskLevel);
+          // Genel riskleri yükle - eğer veritabanında varsa yükle
+          if (data.generalRisks && Array.isArray(data.generalRisks)) {
+            setGeneralRisks(data.generalRisks);
+          } else if (currentStage === 'set-up') {
+            // Set-up stage'inde eğer veritabanında risk yoksa, state'i boş bırak
+            // (kullanıcı daha önce risk eklemediyse)
+            setGeneralRisks([]);
+          }
           // Status completed ise draft olmadığını belirt
           if (data.status === 'completed') setIsDraft(false);
         }
@@ -73,10 +101,48 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
       }
     };
 
+    // Review screen açıldığında veya assess stage'inde set-up risklerini de yükle
+    const fetchSetUpRisks = async () => {
+      if (showReviewScreen || (currentStage === 'assess' && !showReviewScreen)) {
+        try {
+          const response = await fetch(api(`/api/evaluations?projectId=${project.id || (project as any)._id}&userId=${currentUser.id || (currentUser as any)._id}&stage=set-up`));
+          if (response.ok) {
+            const data = await response.json();
+            if (data.generalRisks && Array.isArray(data.generalRisks)) {
+              // Riskler varsa yükle, yoksa mevcut state'i koru (review screen'de önemli)
+              if (data.generalRisks.length > 0) {
+                setGeneralRisks(data.generalRisks);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Set-up risks fetch error:", error);
+        }
+      }
+    };
+
+    const fetchUseCase = async () => {
+      // Project.useCase bir string ID olabilir veya object olabilir
+      const useCaseId = typeof project.useCase === 'string' ? project.useCase : (project.useCase as any)?.id;
+      if (useCaseId) {
+        try {
+          const response = await fetch(api(`/api/use-cases/${useCaseId}`));
+          if (response.ok) {
+            const data = await response.json();
+            setLinkedUseCase(data);
+          }
+        } catch (error) {
+          console.error("Use Case çekme hatası:", error);
+        }
+      }
+    };
+
     fetchEvaluation();
+    fetchUseCase();
+    fetchSetUpRisks();
     // Her stage değişiminde soru indexini sıfırla
     setCurrentQuestionIndex(0);
-  }, [currentStage, project._id, currentUser._id]);
+  }, [currentStage, project.id, currentUser.id, project.useCase, showReviewScreen]);
 
   const activeQuestion = currentQuestions[currentQuestionIndex];
   const isLastQuestion = currentQuestions.length > 0 && currentQuestionIndex === currentQuestions.length - 1;
@@ -90,12 +156,13 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId: project._id,
-          userId: currentUser._id,
+          projectId: project.id || (project as any)._id,
+          userId: currentUser.id || (currentUser as any)._id,
           stage: currentStage,
           answers: answers,
           questionPriorities: questionPriorities, // Her soru için önem derecelerini kaydet
           riskLevel: riskLevel,
+          generalRisks: generalRisks, // Genel riskleri kaydet
           status: status
         })
       });
@@ -129,9 +196,35 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   };
 
   const handleForward = async () => {
+    // Set-up stage'inde en az 3 risk kontrolü
+    if (currentStage === 'set-up') {
+      if (generalRisks.length < 3) {
+        alert("Please add at least 3 general risks before proceeding to the next stage.");
+        return;
+      }
+      // Tüm risklerin başlığı olmalı
+      const hasEmptyTitle = generalRisks.some(risk => !risk.title.trim());
+      if (hasEmptyTitle) {
+        alert("Please ensure all risks have a title.");
+        return;
+      }
+      // Set-up stage'ini kaydet ve sonra assess stage'ine geç
+      const success = await saveEvaluation('completed');
+      if (success) {
+        handleStageChange('next');
+      }
+      return;
+    }
+
     // Zorunluluk Kontrolü
     if (activeQuestion && activeQuestion.required && !answers[activeQuestion.id]) {
       alert("Please answer this required question before proceeding.");
+      return;
+    }
+
+    // Assess stage'inde Importance Level zorunlu kontrolü
+    if (currentStage === 'assess' && activeQuestion && !questionPriorities[activeQuestion.id]) {
+      alert("Please select an importance level for this question before proceeding.");
       return;
     }
 
@@ -139,11 +232,30 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     if (currentQuestions.length > 0 && !isLastQuestion) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
-    // 2. Submit (Resolve aşaması)
+    // 2. Assess stage'inde son soruysa review screen'i göster
+    else if (currentStage === 'assess' && isLastQuestion) {
+      // Review screen açılmadan önce set-up risklerini yükle
+      const fetchSetUpRisksForReview = async () => {
+        try {
+          const response = await fetch(api(`/api/evaluations?projectId=${project.id || (project as any)._id}&userId=${currentUser.id || (currentUser as any)._id}&stage=set-up`));
+          if (response.ok) {
+            const data = await response.json();
+            if (data.generalRisks && Array.isArray(data.generalRisks) && data.generalRisks.length > 0) {
+              setGeneralRisks(data.generalRisks);
+            }
+          }
+        } catch (error) {
+          console.error("Set-up risks fetch error:", error);
+        }
+      };
+      await fetchSetUpRisksForReview();
+      setShowReviewScreen(true);
+    }
+    // 3. Submit (Resolve aşaması)
     else if (currentStage === 'resolve') {
       handleSubmitForm();
     }
-    // 3. Sonraki Stage
+    // 4. Sonraki Stage
     else {
       // Stage değiştirmeden önce kaydet
       const success = await saveEvaluation('completed'); // O anki stage'i tamamlandı olarak işaretle
@@ -167,6 +279,91 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const handleAnswerChange = (questionId: string, answer: any) => {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }));
     setIsDraft(true);
+  };
+
+  // Tension ekleme fonksiyonu
+  const handleCreateTension = async (tensionData: any) => {
+    try {
+      const response = await fetch(api('/api/tensions'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...tensionData,
+          projectId: project.id || (project as any)._id,
+          createdBy: currentUser.id || (currentUser as any)._id,
+          status: 'ongoing'
+        })
+      });
+
+      if (response.ok) {
+        alert('Tension created successfully!');
+        // Form'u temizle
+        setPrinciple1(undefined);
+        setPrinciple2(undefined);
+        setClaim('');
+        setArgument('');
+        setEvidence('');
+        setSeverity(2);
+        setSelectedFile(null);
+      } else {
+        alert('Failed to create tension.');
+      }
+    } catch (error) {
+      console.error('Tension create error:', error);
+      alert('Error creating tension.');
+    }
+  };
+
+  // Dosyayı Base64'e çeviren yardımcı fonksiyon
+  const convertBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const fileReader = new FileReader();
+      fileReader.readAsDataURL(file);
+      fileReader.onload = () => resolve(fileReader.result as string);
+      fileReader.onerror = (error) => reject(error);
+    });
+  };
+
+  const handleTensionSubmit = async (e: any) => {
+    e.preventDefault();
+    
+    if (principle1 && principle2 && claim && argument) {
+      let fileData: string | null = null;
+      
+      if (selectedFile) {
+        try {
+          fileData = await convertBase64(selectedFile);
+        } catch (error) {
+          console.error("File conversion error", error);
+        }
+      }
+
+      await handleCreateTension({
+        principle1,
+        principle2,
+        claimStatement: claim,
+        description: argument,
+        evidenceDescription: evidence,
+        evidenceFileName: selectedFile ? selectedFile.name : undefined,
+        evidenceFileData: fileData,
+        severity: severity === 1 ? 'low' : severity === 2 ? 'medium' : 'high'
+      });
+    }
+  };
+
+  const handleFileChange = (e: any) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  // Review screen'den resolve stage'ine geçiş
+  const handleFinishAssess = async () => {
+    const success = await saveEvaluation('completed');
+    if (success) {
+      setShowReviewScreen(false);
+      handleStageChange('next');
+    }
   };
 
   const handlePriorityChange = (questionId: string, priority: RiskLevel) => {
@@ -210,9 +407,11 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   ];
 
   const getNextButtonText = () => {
+    if (currentStage === 'set-up') return "Continue to Assess Stage";
     if (currentQuestions.length === 0) return "Next Stage";
     if (!isLastQuestion) return "Next Question";
     if (currentStage === 'resolve') return "Submit Evaluation";
+    if (currentStage === 'assess') return "Next";
     return "Finish Stage";
   };
 
@@ -291,7 +490,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
              ))}
          </div>
          
-         {currentStage !== 'resolve' && (
+         {currentStage !== 'resolve' && currentStage !== 'set-up' && (
             <button
               onClick={() => setShowAddQuestion(true)}
               className="px-4 py-2 text-sm font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-all flex items-center shadow-sm"
@@ -302,7 +501,354 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
        </div>
 
         <div className="flex-1 flex flex-col min-h-[500px]">
-            {activeQuestion ? (
+            {showReviewScreen ? (
+                // Review Screen: Cevaplar, Riskler ve Tension Ekleme
+                <div className="flex-1 flex flex-col gap-6">
+                    <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 p-6">
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6">Review & Add Tensions</h2>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Sol Taraf: Cevaplar ve Riskler */}
+                            <div className="space-y-6">
+                                {/* Assess Cevapları */}
+                                <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-5">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                        <Info className="w-5 h-5 mr-2 text-blue-600" />
+                                        Assessment Answers
+                                    </h3>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {assessQuestions.map((question) => (
+                                            <div key={question.id} className="bg-white rounded-lg p-4 border border-gray-200">
+                                                <div className="text-sm font-medium text-gray-700 mb-2">{question.text}</div>
+                                                <div className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">
+                                                    {answers[question.id] || 'No answer provided'}
+                                                </div>
+                                                {questionPriorities[question.id] && (
+                                                    <div className="mt-2">
+                                                        <span className={`text-xs px-2 py-1 rounded-full ${
+                                                            questionPriorities[question.id] === 'low' ? 'bg-green-100 text-green-700' :
+                                                            questionPriorities[question.id] === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                                            'bg-red-100 text-red-700'
+                                                        }`}>
+                                                            Priority: {questionPriorities[question.id]}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Set-up Riskleri */}
+                                <div className="bg-orange-50/50 border border-orange-100 rounded-xl p-5">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                        <AlertTriangle className="w-5 h-5 mr-2 text-orange-600" />
+                                        General Risks
+                                    </h3>
+                                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                                        {generalRisks.length === 0 ? (
+                                            <p className="text-sm text-gray-500 italic">No risks added</p>
+                                        ) : (
+                                            generalRisks.map((risk, index) => (
+                                                <div key={risk.id} className="bg-white rounded-lg p-4 border border-gray-200">
+                                                    <div className="text-sm font-medium text-gray-700 mb-1">
+                                                        Risk {index + 1}: {risk.title}
+                                                    </div>
+                                                    {risk.description && (
+                                                        <div className="text-xs text-gray-600 mt-1">{risk.description}</div>
+                                                    )}
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sağ Taraf: Tension Ekleme Formu */}
+                            <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                    <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
+                                    Add Ethical Tension
+                                </h3>
+                                <form onSubmit={handleTensionSubmit} className="space-y-4">
+                                    <EthicalTensionSelector
+                                        principle1={principle1}
+                                        principle2={principle2}
+                                        onPrinciple1Change={setPrinciple1}
+                                        onPrinciple2Change={setPrinciple2}
+                                    />
+
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-1 text-gray-700">Claim *</label>
+                                        <input 
+                                            type="text" 
+                                            value={claim} 
+                                            onChange={(e) => setClaim(e.target.value)} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder="State the core conflict briefly..." 
+                                            required 
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-1 text-gray-700">Argument *</label>
+                                        <textarea 
+                                            value={argument} 
+                                            onChange={(e) => setArgument(e.target.value)} 
+                                            rows={3} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" 
+                                            placeholder="Explain your reasoning..." 
+                                            required 
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-1 text-gray-700">Evidence (Optional)</label>
+                                        <textarea 
+                                            value={evidence} 
+                                            onChange={(e) => setEvidence(e.target.value)} 
+                                            rows={2} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none mb-2" 
+                                            placeholder="Describe supporting evidence..." 
+                                        />
+                                        <input 
+                                            type="file" 
+                                            onChange={handleFileChange} 
+                                            className="hidden" 
+                                            id="tension-file-input"
+                                        />
+                                        <button 
+                                            type="button" 
+                                            onClick={() => document.getElementById('tension-file-input')?.click()} 
+                                            className={`flex items-center text-sm px-3 py-1.5 rounded-md border transition-colors ${
+                                                selectedFile ? 'text-green-700 bg-green-50 border-green-200' : 'text-gray-600 hover:text-blue-600 bg-gray-50 border-gray-300'
+                                            }`}
+                                        >
+                                            {selectedFile ? (
+                                                <>
+                                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                                    {selectedFile.name}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Upload className="h-4 w-4 mr-2" />
+                                                    Upload File
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-3 text-gray-700">Severity Level</label>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {[1, 2, 3].map((level) => (
+                                                <button
+                                                    key={level}
+                                                    type="button"
+                                                    onClick={() => setSeverity(level)}
+                                                    className={`py-2.5 px-3 rounded-lg border-2 flex flex-col items-center justify-center transition-all ${
+                                                        severity === level 
+                                                            ? (level === 1 ? 'border-green-500 bg-green-50 text-green-700' : level === 2 ? 'border-yellow-500 bg-yellow-50 text-yellow-700' : 'border-red-500 bg-red-50 text-red-700') + ' font-bold'
+                                                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                                    }`}
+                                                >
+                                                    <div className={`w-2.5 h-2.5 rounded-full mb-1 ${severity === level ? (level === 1 ? 'bg-green-500' : level === 2 ? 'bg-yellow-500' : 'bg-red-500') : 'bg-gray-300'}`} />
+                                                    {level === 1 ? 'Low' : level === 2 ? 'Medium' : 'High'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        type="submit" 
+                                        disabled={!principle1 || !principle2 || !claim || !argument} 
+                                        className="w-full px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                                    >
+                                        Save Tension
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : currentStage === 'set-up' ? (
+                // Set-up Stage: Admin'in girdiği Project Context bilgilerini göster
+                <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="p-8 border-b border-gray-100 bg-white">
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="px-3 py-1 bg-blue-100 text-blue-600 text-sm font-medium rounded-full">
+                                Project Context and Scope
+                            </span>
+                        </div>
+                        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
+                            Project Information
+                        </h2>
+                        <p className="text-gray-600 mt-2">Review the project context and scope information provided by the administrator.</p>
+                    </div>
+
+                    <div className="p-8 flex-1 bg-gray-50/30 space-y-6 overflow-y-auto">
+                        {/* Project Context and Scope - Admin'in girdiği bilgiler */}
+                        {project.inspectionContext ? (
+                            <div className="space-y-6">
+                                <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-6">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                        <Info className="w-5 h-5 mr-2 text-blue-600" />
+                                        Project Context and Scope
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">1. Who requested the inspection?</label>
+                                            <p className="text-gray-900 bg-white px-4 py-2 rounded-lg border border-gray-200">{project.inspectionContext.requester || 'Not provided'}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">2. Why carry out an inspection?</label>
+                                            <p className="text-gray-900 bg-white px-4 py-2 rounded-lg border border-gray-200">{project.inspectionContext.inspectionReason || 'Not provided'}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">3. For whom is the inspection relevant?</label>
+                                            <p className="text-gray-900 bg-white px-4 py-2 rounded-lg border border-gray-200">{project.inspectionContext.relevantFor || 'Not provided'}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">4. Is it recommended or required (mandatory inspection)?</label>
+                                            <p className="text-gray-900 bg-white px-4 py-2 rounded-lg border border-gray-200 capitalize">{project.inspectionContext.isMandatory || 'Not provided'}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">5. What are the sufficient vs. necessary conditions that need to be analyzed?</label>
+                                            <p className="text-gray-900 bg-white px-4 py-2 rounded-lg border border-gray-200 whitespace-pre-wrap">{project.inspectionContext.conditionsToAnalyze || 'Not provided'}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">6. How are the inspection results to be used?</label>
+                                            <p className="text-gray-900 bg-white px-4 py-2 rounded-lg border border-gray-200">{project.inspectionContext.resultsUsage || 'Not provided'}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">7. Will the results be shared (public) or kept private?</label>
+                                            <p className="text-gray-900 bg-white px-4 py-2 rounded-lg border border-gray-200 whitespace-pre-wrap">{project.inspectionContext.resultsSharing || 'Not provided'}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
+                                <p className="text-yellow-800">Project context information has not been provided yet.</p>
+                            </div>
+                        )}
+
+                        {/* Use Case Owner Information - Sadece başlık olarak */}
+                        {linkedUseCase && (
+                            <div className="bg-green-50/50 border border-green-100 rounded-2xl p-6">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+                                    <Info className="w-5 h-5 mr-2 text-green-600" />
+                                    Use Case Owner Information
+                                </h3>
+                                <p className="text-sm text-gray-600 italic">This section will be available soon.</p>
+                            </div>
+                        )}
+
+                        {/* General Risks Section */}
+                        <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-orange-600" />
+                                    <h3 className="text-lg font-semibold text-gray-900">General Risks</h3>
+                                    <span className="px-2.5 py-0.5 bg-red-50 text-red-600 text-xs font-medium rounded-full border border-red-100">
+                                        Minimum 3 required
+                                    </span>
+                                </div>
+                                {generalRisks.length > 0 && (
+                                    <button
+                                        onClick={() => {
+                                            setGeneralRisks([...generalRisks, { id: Date.now().toString(), title: '', description: '' }]);
+                                        }}
+                                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Add Risk
+                                    </button>
+                                )}
+                            </div>
+                            
+                            <div className="space-y-4">
+                                {generalRisks.length === 0 ? (
+                                    <div className="text-center py-8 bg-white rounded-lg border-2 border-dashed border-gray-300">
+                                        <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                        <p className="text-sm text-gray-500 italic mb-6">No risks added yet. Click "Add Risk" to start.</p>
+                                        <button
+                                            onClick={() => {
+                                                setGeneralRisks([...generalRisks, { id: Date.now().toString(), title: '', description: '' }]);
+                                            }}
+                                            className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            Add Risk
+                                        </button>
+                                    </div>
+                                ) : (
+                                    generalRisks.map((risk, index) => (
+                                        <div key={risk.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                                            <div className="flex items-start gap-3">
+                                                <div className="flex-1 space-y-3">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                            Risk {index + 1} Title *
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={risk.title}
+                                                            onChange={(e) => {
+                                                                const updated = [...generalRisks];
+                                                                updated[index].title = e.target.value;
+                                                                setGeneralRisks(updated);
+                                                                setIsDraft(true);
+                                                            }}
+                                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                                            placeholder="Enter risk title..."
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                            Description (Optional)
+                                                        </label>
+                                                        <textarea
+                                                            value={risk.description}
+                                                            onChange={(e) => {
+                                                                const updated = [...generalRisks];
+                                                                updated[index].description = e.target.value;
+                                                                setGeneralRisks(updated);
+                                                                setIsDraft(true);
+                                                            }}
+                                                            rows={2}
+                                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
+                                                            placeholder="Enter risk description (optional)..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setGeneralRisks(generalRisks.filter((_, i) => i !== index));
+                                                        setIsDraft(true);
+                                                    }}
+                                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    title="Remove risk"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                            
+                            {generalRisks.length > 0 && generalRisks.length < 3 && (
+                                <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                    <p className="text-sm text-yellow-800">
+                                        <AlertTriangle className="w-4 h-4 inline mr-1" />
+                                        Please add at least {3 - generalRisks.length} more risk{3 - generalRisks.length > 1 ? 's' : ''} to continue.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : activeQuestion ? (
                 <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1 animate-in fade-in slide-in-from-bottom-4 duration-300">
                     
                     <div className="p-8 border-b border-gray-100 bg-white">
@@ -441,6 +987,11 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                             <div className="flex items-center gap-2 mb-4">
                                 <AlertTriangle className="w-5 h-5 text-orange-500" />
                                 <h3 className="text-lg font-semibold text-gray-900">Importance Level for This Question</h3>
+                                {currentStage === 'assess' && (
+                                    <span className="px-2.5 py-0.5 bg-red-50 text-red-600 text-xs font-medium rounded-full border border-red-100">
+                                        Required
+                                    </span>
+                                )}
                             </div>
                             <div className="grid grid-cols-3 gap-4 max-w-2xl">
                                 {(['low', 'medium', 'high'] as RiskLevel[]).map((level) => {
@@ -570,41 +1121,72 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
         </div>
 
         <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 mt-8 flex justify-between items-center z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-            
-            <button
-                onClick={handleBack}
-                disabled={currentStage === 'set-up' && isFirstQuestion}
-                className={`flex items-center px-6 py-3 rounded-xl font-semibold transition-all border-2 ${
-                    currentStage === 'set-up' && isFirstQuestion
-                    ? 'text-gray-300 border-gray-100 cursor-not-allowed bg-gray-50' 
-                    : 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-                }`}
-            >
-                <ChevronLeft className="w-5 h-5 mr-2" /> Previous
-            </button>
+            {showReviewScreen ? (
+                <>
+                    <button
+                        onClick={() => setShowReviewScreen(false)}
+                        className="flex items-center px-6 py-3 rounded-xl font-semibold transition-all border-2 text-gray-700 bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+                    >
+                        <ChevronLeft className="w-5 h-5 mr-2" /> Back to Questions
+                    </button>
 
-            <div className="flex items-center gap-4">
-                <button 
-                    onClick={() => saveEvaluation('draft')} 
-                    disabled={saving}
-                    className="px-6 py-3 bg-indigo-50 border-2 border-indigo-100 text-indigo-600 font-semibold rounded-xl hover:bg-indigo-100 hover:border-indigo-200 transition-all flex items-center"
-                >
-                    {saving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
-                    {saving ? 'Saving...' : 'Save Draft'}
-                </button>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => saveEvaluation('draft')} 
+                            disabled={saving}
+                            className="px-6 py-3 bg-indigo-50 border-2 border-indigo-100 text-indigo-600 font-semibold rounded-xl hover:bg-indigo-100 hover:border-indigo-200 transition-all flex items-center"
+                        >
+                            {saving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
+                            {saving ? 'Saving...' : 'Save Draft'}
+                        </button>
 
-                <button
-                    onClick={handleForward}
-                    disabled={saving}
-                    className={`flex items-center px-8 py-3 text-white rounded-xl font-bold shadow-md transition-all hover:-translate-y-0.5 ${
-                        currentStage === 'resolve' 
-                            ? 'bg-green-600 hover:bg-green-700' 
-                            : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                >
-                    {getNextButtonText()} <ChevronRight className="w-5 h-5 ml-2" />
-                </button>
-            </div>
+                        <button
+                            onClick={handleFinishAssess}
+                            disabled={saving}
+                            className="flex items-center px-8 py-3 text-white rounded-xl font-bold shadow-md transition-all hover:-translate-y-0.5 bg-blue-600 hover:bg-blue-700"
+                        >
+                            Finish Assess Stage <ChevronRight className="w-5 h-5 ml-2" />
+                        </button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <button
+                        onClick={handleBack}
+                        disabled={currentStage === 'set-up'}
+                        className={`flex items-center px-6 py-3 rounded-xl font-semibold transition-all border-2 ${
+                            currentStage === 'set-up'
+                            ? 'text-gray-300 border-gray-100 cursor-not-allowed bg-gray-50' 
+                            : 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                        }`}
+                    >
+                        <ChevronLeft className="w-5 h-5 mr-2" /> Previous
+                    </button>
+
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => saveEvaluation('draft')} 
+                            disabled={saving}
+                            className="px-6 py-3 bg-indigo-50 border-2 border-indigo-100 text-indigo-600 font-semibold rounded-xl hover:bg-indigo-100 hover:border-indigo-200 transition-all flex items-center"
+                        >
+                            {saving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
+                            {saving ? 'Saving...' : 'Save Draft'}
+                        </button>
+
+                        <button
+                            onClick={handleForward}
+                            disabled={saving}
+                            className={`flex items-center px-8 py-3 text-white rounded-xl font-bold shadow-md transition-all hover:-translate-y-0.5 ${
+                                currentStage === 'resolve' 
+                                    ? 'bg-green-600 hover:bg-green-700' 
+                                    : 'bg-blue-600 hover:bg-blue-700'
+                            }`}
+                        >
+                            {getNextButtonText()} <ChevronRight className="w-5 h-5 ml-2" />
+                        </button>
+                    </div>
+                </>
+            )}
         </div>
 
       </div>

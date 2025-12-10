@@ -186,7 +186,7 @@ function App() {
   };
 
   // --- CREATION HANDLERS (BACKEND'E KAYIT) ---
-  const handleCreateProject = async (projectData: Partial<Project>) => {
+  const handleCreateProject = async (projectData: Partial<Project>): Promise<Project | null> => {
     try {
       const response = await fetch(api('/api/projects'), {
         method: 'POST',
@@ -210,12 +210,15 @@ function App() {
         };
         setProjects([newProjectFrontend, ...projects]);
         alert("Proje başarıyla oluşturuldu!");
+        return newProjectFrontend;
       } else {
         alert("Proje oluşturulurken bir hata oluştu.");
+        return null;
       }
     } catch (error) {
       console.error("Proje oluşturma hatası:", error);
       alert("Sunucuya bağlanılamadı.");
+      return null;
     }
   };
 

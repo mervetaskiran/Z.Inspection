@@ -92,6 +92,11 @@ const EvaluationSchema = new mongoose.Schema({
   answers: { type: Map, of: mongoose.Schema.Types.Mixed },
   questionPriorities: { type: Map, of: String }, // Her soru için önem derecesi (low/medium/high)
   riskLevel: { type: String, default: 'medium' },
+  generalRisks: [{ // Genel riskler - her proje için ayrı ayrı kaydedilir
+    id: String,
+    title: String,
+    description: String
+  }],
   status: { type: String, default: 'draft' },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -342,10 +347,10 @@ app.post('/api/tensions/:id/evidence', async (req, res) => {
 // Evaluations
 app.post('/api/evaluations', async (req, res) => {
   try {
-    const { projectId, userId, stage, answers, questionPriorities, riskLevel, status } = req.body;
+    const { projectId, userId, stage, answers, questionPriorities, riskLevel, generalRisks, status } = req.body;
     const evaluation = await Evaluation.findOneAndUpdate(
       { projectId, userId, stage },
-      { answers, questionPriorities, riskLevel, status: status || 'draft', updatedAt: new Date() },
+      { answers, questionPriorities, riskLevel, generalRisks: generalRisks || [], status: status || 'draft', updatedAt: new Date() },
       { new: true, upsert: true }
     );
     res.json(evaluation);
