@@ -5,6 +5,26 @@ export interface User {
   role: 'admin' | 'ethical-expert' | 'medical-expert' | 'use-case-owner' | 'education-expert';
 }
 
+export type StageKey = 'set-up' | 'assess' | 'resolve';
+export type QuestionType = 'multiple-choice' | 'checkbox' | 'text' | 'likert';
+
+export interface QuestionOption {
+  value: string;
+  label: string;
+}
+
+export interface Question {
+  id: string;
+  text: string;
+  stage: StageKey;
+  type: QuestionType;
+  required?: boolean;
+  options?: QuestionOption[];
+  description?: string;
+  min?: number;
+  max?: number;
+}
+
 export interface Project {
   id: string;
   title: string;
@@ -85,6 +105,13 @@ export interface Evaluation {
   }>;
   status: 'draft' | 'submitted';
   riskLevel: 'low' | 'medium' | 'high';
+  generalRisks?: Array<{
+    id: string;
+    title: string;
+    description?: string;
+    severity?: 'low' | 'medium' | 'high' | 'critical';
+    relatedQuestions?: string[];
+  }>;
 }
 
 export interface Message {

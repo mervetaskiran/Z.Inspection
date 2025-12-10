@@ -95,7 +95,9 @@ const EvaluationSchema = new mongoose.Schema({
   generalRisks: [{ // Genel riskler - her proje için ayrı ayrı kaydedilir
     id: String,
     title: String,
-    description: String
+    description: String,
+    severity: { type: String, default: 'medium' }, // low | medium | high | critical
+    relatedQuestions: [String]
   }],
   status: { type: String, default: 'draft' },
   updatedAt: { type: Date, default: Date.now }
@@ -257,6 +259,22 @@ app.get('/api/tensions/id/:id', async (req, res) => {
     const tension = await Tension.findById(req.params.id);
     if (!tension) return res.status(404).json({ error: 'Not found' });
     res.json(tension);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tension güncelle
+app.put('/api/tensions/:id', async (req, res) => {
+  try {
+    const { principle1, principle2, claimStatement, description, severity } = req.body;
+    const updated = await Tension.findByIdAndUpdate(
+      req.params.id,
+      { principle1, principle2, claimStatement, description, severity },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
