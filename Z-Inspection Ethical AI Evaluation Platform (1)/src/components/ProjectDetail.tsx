@@ -7,17 +7,19 @@ import { Project, User, Tension, UseCaseOwner, UseCase } from '../types'; // Use
 import { UseCaseOwners } from './UseCaseOwners';
 import { TensionCard } from './TensionCard';
 import { AddTensionModal } from './AddTensionModal';
-import { api } from '../api';
+import { ChatPanel } from './ChatPanel';
 
 interface ProjectDetailProps {
   project: Project;
   currentUser: User;
   users: User[];
+  projects?: Project[]; // Add projects prop for communication
   onBack: () => void;
   onStartEvaluation: () => void;
   onViewTension?: (tension: Tension) => void;
   onViewOwner?: (owner: UseCaseOwner) => void;
-  onCreateTension?: (data: any) => void; 
+  onCreateTension?: (data: any) => void;
+  initialChatUserId?: string; // Optional: open chat with this user on mount
 }
 
 const roleColors = {
@@ -34,23 +36,128 @@ export function ProjectDetail({
   project,
   currentUser,
   users,
+  projects = [],
   onBack,
   onStartEvaluation,
   onViewTension,
   onViewOwner,
+  initialChatUserId,
 }: ProjectDetailProps) {
   const [activeTab, setActiveTab] = useState<'evaluation' | 'tensions' | 'usecase' | 'owners'>('evaluation');
   const [showAddTension, setShowAddTension] = useState(false);
   const [tensions, setTensions] = useState<Tension[]>([]); 
   // Yeni: Bağlı Use Case verisini tutacak state
   const [linkedUseCase, setLinkedUseCase] = useState<UseCase | null>(null);
+  // Chat panel state
+  const [chatPanelOpen, setChatPanelOpen] = useState(false);
+  const [chatOtherUser, setChatOtherUser] = useState<User | null>(null);
+  const [chatProject, setChatProject] = useState<Project | null>(null);
+
+  // Find or create a project for communication with a user (UseCaseOwner-Admin mantığı)
+  const getCommunicationProject = async (otherUser: User): Promise<Project> => {
+    // Use projects list if available, otherwise use current project
+    const allProjects = projects.length > 0 ? projects : [project];
+    
+    // Try to find an existing project where both users are assigned
+    let commProject = allProjects.find(p => 
+      p.assignedUsers.includes(currentUser.id) && 
+      p.assignedUsers.includes(otherUser.id)
+    );
+    
+    // If not found, try to find a project with similar name
+    if (!commProject) {
+      const projectName = `Communication: ${currentUser.name} & ${otherUser.name}`;
+      commProject = allProjects.find(p => 
+        p.title === projectName || 
+        p.title.includes('Communication') ||
+        (p.assignedUsers.includes(currentUser.id) && p.assignedUsers.includes(otherUser.id))
+      );
+    }
+    
+    // If still not found, use current project if both users are assigned
+    if (!commProject && project.assignedUsers.includes(currentUser.id) && project.assignedUsers.includes(otherUser.id)) {
+      commProject = project;
+    }
+    
+    // If still no project, use first available project as fallback
+    if (!commProject && allProjects.length > 0) {
+      commProject = allProjects[0];
+    }
+    
+    // If still no project, create one via API
+    if (!commProject) {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `Communication: ${currentUser.name} & ${otherUser.name}`,
+            shortDescription: `Direct communication between ${currentUser.name} and ${otherUser.name}`,
+            fullDescription: 'This project is used for direct communication between team members.',
+            stage: 'set-up',
+            status: 'ongoing',
+            targetDate: new Date().toISOString(),
+            assignedUsers: [currentUser.id, otherUser.id],
+            progress: 0
+          }),
+        });
+        if (response.ok) {
+          const newProject = await response.json();
+          commProject = { ...newProject, id: newProject._id || newProject.id };
+          console.log('Created communication project:', commProject);
+        } else {
+          const error = await response.text();
+          console.error('Failed to create project:', response.status, error);
+        }
+      } catch (error) {
+        console.error('Error creating communication project:', error);
+      }
+    }
+    
+    // Final fallback - use current project (even if not ideal)
+    if (!commProject) {
+      commProject = project;
+      console.log('Using current project for communication:', commProject);
+    }
+    
+    return commProject;
+  };
+
+  const handleContactUser = async (otherUser: User) => {
+    try {
+      console.log('handleContactUser called for:', { otherUser, currentUser });
+      const commProject = await getCommunicationProject(otherUser);
+      console.log('Opening chat with:', { otherUser, project: commProject });
+      if (!commProject) {
+        throw new Error('No project available for communication');
+      }
+      setChatOtherUser(otherUser);
+      setChatProject(commProject);
+      setChatPanelOpen(true);
+    } catch (error) {
+      console.error('Error opening chat:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert('Cannot open chat: ' + errorMessage);
+    }
+  };
+
+  // Open chat panel if initialChatUserId is provided
+  useEffect(() => {
+    if (initialChatUserId && !chatPanelOpen) {
+      const user = users.find(u => u.id === initialChatUserId);
+      if (user && user.id !== currentUser.id) {
+        setChatOtherUser(user);
+        setChatPanelOpen(true);
+      }
+    }
+  }, [initialChatUserId, users, currentUser.id, chatPanelOpen]);
 
   const hasEditPermission = true; 
 
   // Tensionları Getir
   const fetchTensions = async () => {
     try {
-      const response = await fetch(api(`/api/tensions/${project.id}?userId=${currentUser.id}`));
+      const response = await fetch(`http://localhost:5000/api/tensions/${project.id}?userId=${currentUser.id}`);
       if (response.ok) {
         const data = await response.json();
         const formattedData = data.map((t: any) => ({
@@ -71,7 +178,12 @@ export function ProjectDetail({
   const fetchUseCase = async () => {
     if (!project.useCase) return;
     try {
-        const response = await fetch(api(`/api/use-cases/${project.useCase}`));
+        // Handle both string ID and object with url
+        const useCaseId = typeof project.useCase === 'string' 
+          ? project.useCase 
+          : (project.useCase as any).url || project.useCase;
+        
+        const response = await fetch(`http://localhost:5000/api/use-cases/${useCaseId}`);
         if (response.ok) {
             const data = await response.json();
             setLinkedUseCase(data);
@@ -104,7 +216,7 @@ export function ProjectDetail({
         createdBy: currentUser.id
       };
 
-      const response = await fetch(api('/api/tensions'), {
+      const response = await fetch('http://localhost:5000/api/tensions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -143,7 +255,7 @@ export function ProjectDetail({
 
   const handleVote = async (tensionId: string, voteType: 'agree' | 'disagree') => {
     try {
-      const response = await fetch(api(`/api/tensions/${tensionId}/vote`), {
+      const response = await fetch(`http://localhost:5000/api/tensions/${tensionId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id, voteType }),
@@ -165,10 +277,25 @@ export function ProjectDetail({
   const useCaseOwnerName = linkedUseCase ? users.find(u => u.id === linkedUseCase.ownerId)?.name : 'Unknown';
   const handleDownload = (file: { name: string; data?: string; url?: string; contentType?: string }) => {
     if (file.data) {
-      const link = document.createElement('a');
-      link.href = file.data;
-      link.download = file.name;
-      link.click();
+      try {
+        // Check if data is already a data URL
+        let dataUrl = file.data;
+        if (!dataUrl.startsWith('data:')) {
+          // Construct data URL from base64 string
+          const contentType = file.contentType || 'application/octet-stream';
+          dataUrl = `data:${contentType};base64,${file.data}`;
+        }
+        
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = file.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (error) {
+        console.error('Download error:', error);
+        alert('Unable to download file.');
+      }
     } else if (file.url) {
       window.open(file.url, '_blank');
     } else {
@@ -176,7 +303,7 @@ export function ProjectDetail({
     }
   };
 
-  // Download full use case details (JSON) and then any supporting files
+  // Download supporting files from use case (not JSON)
   const handleDownloadUseCase = (forUser?: User) => {
     if (!linkedUseCase) {
       alert('No linked use case to download.');
@@ -184,46 +311,37 @@ export function ProjectDetail({
     }
 
     try {
-      const details = {
-        id: linkedUseCase.id || (linkedUseCase as any)._id,
-        title: linkedUseCase.title,
-        description: linkedUseCase.description,
-        aiSystemCategory: linkedUseCase.aiSystemCategory,
-        status: linkedUseCase.status,
-        ownerId: linkedUseCase.ownerId,
-        assignedExperts: linkedUseCase.assignedExperts,
-        createdAt: linkedUseCase.createdAt,
-        extendedInfo: linkedUseCase.extendedInfo,
-      };
-
-      const blob = new Blob([JSON.stringify(details, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const safeTitle = (linkedUseCase.title || 'usecase').replace(/[^a-z0-9-_]/gi, '_');
-      link.download = `${safeTitle}-details.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-
-      // Then download supporting files (if any)
+      // Download supporting files (if any)
       if (linkedUseCase.supportingFiles && linkedUseCase.supportingFiles.length > 0) {
         linkedUseCase.supportingFiles.forEach((file: any, idx: number) => {
           // small timeout to let browser process sequential downloads
           setTimeout(() => {
             if (file.data) {
-              const a = document.createElement('a');
-              a.href = file.data;
-              a.download = file.name || `file-${idx}`;
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
+              try {
+                // Check if data is already a data URL
+                let dataUrl = file.data;
+                if (!dataUrl.startsWith('data:')) {
+                  // Construct data URL from base64 string
+                  const contentType = file.contentType || 'application/octet-stream';
+                  dataUrl = `data:${contentType};base64,${file.data}`;
+                }
+                
+                const a = document.createElement('a');
+                a.href = dataUrl;
+                a.download = file.name || `file-${idx}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              } catch (error) {
+                console.error('Supporting file download error:', error);
+              }
             } else if (file.url) {
               window.open(file.url, '_blank');
             }
           }, idx * 250);
         });
+      } else {
+        alert('No files available to download for this use case.');
       }
     } catch (err) {
       console.error('Download error', err);
@@ -275,37 +393,106 @@ export function ProjectDetail({
           </div>
         </div>
 
-        {/* Assigned Members with download button */}
+        {/* Assigned Members with Contact button */}
         <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
           <h4 className="text-sm font-medium text-gray-700 mb-3">Assigned Members</h4>
           <div className="space-y-2">
             {assignedUserDetails.length > 0 ? (
-              assignedUserDetails.map((u) => (
-                <div key={u.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
-                  <div className="flex items-center">
-                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center mr-3">{u.name?.charAt(0) || 'U'}</div>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{u.name}</div>
-                      <div className="text-xs text-gray-500">{u.role}</div>
+              assignedUserDetails
+                .filter((u) => {
+                  // Admin hariç diğer uzmanlar use-case-owner'ı göremez
+                  if (u.role === 'use-case-owner' && currentUser.role !== 'admin') {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((u) => {
+                  // All roles can contact assigned members (except themselves)
+                  // Only use-case-owner has restriction: can only contact admin
+                  const canContact = u.id !== currentUser.id && 
+                    !(currentUser.role === 'use-case-owner' && u.role !== 'admin');
+                  
+                  return (
+                    <div key={u.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center mr-3">{u.name?.charAt(0) || 'U'}</div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{u.name}</div>
+                          <div className="text-xs text-gray-500">{u.role}</div>
+                        </div>
+                      </div>
+                      <div>
+                        {canContact && (
+                          <button
+                            onClick={() => {
+                              console.log('Contact button clicked for user:', u);
+                              handleContactUser(u);
+                            }}
+                            className="inline-flex items-center px-3 py-1.5 text-sm rounded text-blue-600 hover:bg-blue-50"
+                          >
+                            <MessageSquare className="w-4 h-4 mr-2" />
+                            Contact
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <button
-                      onClick={() => handleDownloadUseCase(u)}
-                      disabled={!linkedUseCase}
-                      className={`inline-flex items-center px-3 py-1.5 text-sm rounded ${linkedUseCase ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-300 cursor-not-allowed'}`}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Use Case
-                    </button>
-                  </div>
-                </div>
-              ))
+                  );
+                })
             ) : (
               <div className="text-sm text-gray-500">No members assigned.</div>
             )}
           </div>
         </div>
+
+        {/* All Team Members - Contact any user */}
+        {/* Use-case-owner can only contact admin, others can contact everyone */}
+        {(() => {
+          // Filter users based on current user role
+          let availableUsers = users.filter(u => u.id !== currentUser.id);
+          
+          // If current user is use-case-owner, only show admin
+          if (currentUser.role === 'use-case-owner') {
+            availableUsers = availableUsers.filter(u => u.role === 'admin');
+          }
+          // If current user is admin, show everyone except use-case-owner (they contact admin separately)
+          // Actually, admin should see everyone including use-case-owner
+          
+          return availableUsers.length > 0 ? (
+            <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">
+                {currentUser.role === 'use-case-owner' ? 'Contact Admin' : 'All Team Members'}
+              </h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {availableUsers.map((u) => {
+                  const isAssigned = project.assignedUsers.includes(u.id);
+                  return (
+                    <div key={u.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center mr-3">{u.name?.charAt(0) || 'U'}</div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{u.name}</div>
+                          <div className="text-xs text-gray-500">{u.role} {isAssigned && <span className="text-green-600">(Assigned)</span>}</div>
+                        </div>
+                      </div>
+                      <div>
+                        <button
+                          onClick={() => {
+                            console.log('Contact button clicked for user:', u);
+                            handleContactUser(u);
+                          }}
+                          className="inline-flex items-center px-3 py-1.5 text-sm rounded text-blue-600 hover:bg-blue-50"
+                        >
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          Contact
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null;
+        })()}
 
         <div className="bg-white rounded-lg shadow-sm border">
           <div className="border-b border-gray-200 flex">
@@ -448,6 +635,23 @@ export function ProjectDetail({
       </div>
 
       {showAddTension && <AddTensionModal onClose={() => setShowAddTension(false)} onSave={handleSaveTension} />}
+      
+      {chatPanelOpen && chatOtherUser && chatProject && (
+        <ChatPanel
+          project={chatProject}
+          currentUser={currentUser}
+          otherUser={chatOtherUser}
+          onClose={() => {
+            setChatPanelOpen(false);
+            setChatOtherUser(null);
+            setChatProject(null);
+          }}
+          onMessageSent={() => {
+            // Trigger window event to refresh notifications in other components
+            window.dispatchEvent(new Event('message-sent'));
+          }}
+        />
+      )}
     </div>
   );
 }

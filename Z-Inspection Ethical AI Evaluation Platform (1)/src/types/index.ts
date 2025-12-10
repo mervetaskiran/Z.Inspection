@@ -2,7 +2,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'ethical-expert' | 'medical-expert' | 'use-case-owner' | 'education-expert';
+  role: 'admin' | 'ethical-expert' | 'medical-expert' | 'use-case-owner' | 'education-expert' | 'technical-expert' | 'legal-expert';
 }
 
 export type StageKey = 'set-up' | 'assess' | 'resolve';

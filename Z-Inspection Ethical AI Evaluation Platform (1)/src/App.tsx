@@ -376,6 +376,7 @@ function App() {
           <SharedArea
             currentUser={currentUser}
             projects={projects}
+            users={users}
             onBack={handleBackToDashboard}
           />
         );
@@ -403,10 +404,13 @@ function App() {
             <UseCaseOwnerDashboard
               currentUser={currentUser}
               useCases={useCases}
+              users={users}
+              projects={projects}
               onCreateUseCase={handleCreateUseCase}
               onViewUseCase={handleViewUseCase}
               onDeleteUseCase={handleDeleteUseCase}
               onLogout={handleLogout}
+              onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
             />
           );
         } else if (currentUser.role === "admin") {
@@ -422,6 +426,7 @@ function App() {
               onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
               onLogout={handleLogout}
+              onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
             />
           );
         } else {
@@ -436,6 +441,7 @@ function App() {
               onNavigate={setCurrentView}
               onViewUseCase={handleViewUseCase}
               onLogout={handleLogout}
+              onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
             />
           );
         }

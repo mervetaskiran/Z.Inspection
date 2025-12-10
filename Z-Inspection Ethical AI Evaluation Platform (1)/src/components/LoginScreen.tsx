@@ -22,6 +22,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<string>('admin');
+  const [loading, setLoading] = useState(false);
 
   // Login + Register birleşik handleSubmit
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,7 +36,14 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
     if (isLogin) {
       // Giriş işlemi (App.tsx'teki handleLogin tetiklenir)
-      onLogin(email, password, role);
+      setLoading(true);
+      try {
+        await onLogin(email, password, role);
+      } catch (error) {
+        console.error('Login error:', error);
+      } finally {
+        setLoading(false);
+      }
     } else {
       // Kayıt olma işlemi
       if (!name) {
@@ -172,12 +180,13 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
             <button
               type="submit"
-              className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium"
+              disabled={loading}
+              className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 backgroundColor: roleColors[role as keyof typeof roleColors] || '#1F2937'
               }}
             >
-              {isLogin ? 'Sign In' : 'Create Account'}
+              {loading ? 'Loading...' : (isLogin ? 'Sign In' : 'Create Account')}
             </button>
           </form>
 

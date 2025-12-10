@@ -1,16 +1,21 @@
-import React, { useState } from 'react';
-import { Plus, LogOut, FolderOpen, Upload, X, FileText, Clock, Eye, Download, Info, Database, Users as UsersIcon, Scale, Trash2 } from 'lucide-react';
-import { User, UseCase } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, LogOut, FolderOpen, Upload, X, FileText, Clock, Eye, Download, Info, Database, Users as UsersIcon, Scale, Trash2, MessageSquare, Bell } from 'lucide-react';
+import { User, UseCase, Project } from '../types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { ChatPanel } from './ChatPanel';
+import { ProfileModal } from './ProfileModal';
 
 interface UseCaseOwnerDashboardProps {
   currentUser: User;
   useCases: UseCase[];
+  users: User[];
+  projects: Project[];
   onCreateUseCase: (useCase: Partial<UseCase>) => void;
   onViewUseCase: (useCase: UseCase) => void;
   onDeleteUseCase: (useCaseId: string) => void;
   onLogout: () => void;
+  onUpdateUser?: (user: User) => void;
 }
 
 const statusColors = {
@@ -28,14 +33,165 @@ const statusLabels = {
 export function UseCaseOwnerDashboard({
   currentUser,
   useCases,
+  users,
+  projects,
   onCreateUseCase,
   onViewUseCase,
   onDeleteUseCase,
-  onLogout
+  onLogout,
+  onUpdateUser
 }: UseCaseOwnerDashboardProps) {
   const [showNewUseCaseModal, setShowNewUseCaseModal] = useState(false);
+  const [chatPanelOpen, setChatPanelOpen] = useState(false);
+  const [chatAdmin, setChatAdmin] = useState<User | null>(null);
+  const [chatProject, setChatProject] = useState<Project | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadConversations, setUnreadConversations] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const [showProfile, setShowProfile] = useState(false);
 
   const myUseCases = useCases.filter(uc => uc.ownerId === currentUser.id);
+  
+  // Find admin user
+  const adminUser = users.find(u => u.role === 'admin');
+  
+  // Fetch unread message count
+  const fetchUnreadCount = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/api/messages/unread-count?userId=${currentUser.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('UseCaseOwner unread count fetched:', data);
+        setUnreadCount(data.totalCount || 0);
+        setUnreadConversations(data.conversations || []);
+      } else {
+        console.error('UseCaseOwner failed to fetch unread count:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching unread count:', error);
+    }
+  };
+
+  // Poll for unread messages every 30 seconds
+  useEffect(() => {
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 30000);
+    
+    const handleMessageSent = () => {
+      setTimeout(fetchUnreadCount, 1000);
+    };
+    window.addEventListener('message-sent', handleMessageSent);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('message-sent', handleMessageSent);
+    };
+  }, [currentUser.id]);
+
+  // Close notifications when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Handle notification click
+  const handleNotificationClick = async (conversation: any) => {
+    const project = projects.find(p => p.id === conversation.projectId);
+    const otherUser = users.find(u => u.id === conversation.fromUserId);
+    
+    if (project && otherUser) {
+      try {
+        await fetch('http://127.0.0.1:5000/api/messages/mark-read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: conversation.projectId,
+            userId: currentUser.id,
+            otherUserId: conversation.fromUserId,
+          }),
+        });
+        fetchUnreadCount();
+      } catch (error) {
+        console.error('Error marking messages as read:', error);
+      }
+      
+      setChatAdmin(otherUser);
+      setChatProject(project);
+      setChatPanelOpen(true);
+      setShowNotifications(false);
+    }
+  };
+  
+  // Find or create a general project for admin communication
+  const getAdminProject = async (): Promise<Project> => {
+    // Try to find an existing admin communication project
+    let adminProject = projects.find(p => p.title === 'Admin Communication' || p.title.includes('Admin'));
+    if (!adminProject && projects.length > 0) {
+      // Use first project as fallback
+      adminProject = projects[0];
+    }
+    // If still no project, create one via API
+    if (!adminProject) {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Admin Communication',
+            shortDescription: 'General communication with admin',
+            fullDescription: 'This project is used for direct communication between use case owners and administrators.',
+            stage: 'set-up',
+            status: 'ongoing',
+            targetDate: new Date().toISOString(),
+            assignedUsers: [currentUser.id, adminUser?.id || ''],
+            progress: 0
+          }),
+        });
+        if (response.ok) {
+          const newProject = await response.json();
+          adminProject = { ...newProject, id: newProject._id || newProject.id };
+        }
+      } catch (error) {
+        console.error('Error creating admin project:', error);
+      }
+    }
+    // Final fallback - create dummy project (won't work for messaging but won't crash)
+    if (!adminProject) {
+      adminProject = {
+        id: 'temp-admin-chat',
+        title: 'Admin Communication',
+        shortDescription: 'General communication with admin',
+        fullDescription: '',
+        stage: 'set-up',
+        status: 'ongoing',
+        targetDate: new Date().toISOString(),
+        assignedUsers: [currentUser.id, adminUser?.id || ''],
+        createdAt: new Date().toISOString(),
+        progress: 0
+      } as Project;
+    }
+    return adminProject;
+  };
+
+  const handleContactAdmin = async () => {
+    console.log('Contact Admin clicked', { adminUser, users, usersLength: users.length });
+    if (adminUser) {
+      const project = await getAdminProject();
+      console.log('Opening chat with admin', { adminUser, project });
+      setChatAdmin(adminUser);
+      setChatProject(project);
+      setChatPanelOpen(true);
+    } else {
+      console.error('Admin user not found. Available users:', users.map(u => ({ id: u.id, name: u.name, role: u.role })));
+      alert('Admin user not found. Please contact support.');
+    }
+  };
 
   // ⭐ TEMPLATE DOWNLOAD FUNCTION
   const handleDownloadTemplate = () => {
@@ -46,10 +202,10 @@ export function UseCaseOwnerDashboard({
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
 
       {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
 
         <div className="h-1 bg-gradient-to-r from-green-500 to-green-600" />
 
@@ -58,23 +214,43 @@ export function UseCaseOwnerDashboard({
           <div className="text-xs text-gray-600">Use-case Owner Portal</div>
         </div>
 
-        <div className="px-6 py-4 border-b border-gray-200">
+        <button
+          onClick={() => setShowProfile(true)}
+          className="w-full px-6 py-4 border-b border-gray-200 hover:bg-gray-50 transition-colors text-left"
+        >
           <div className="flex items-center">
-            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center text-white mr-3">
-              {currentUser.name.charAt(0)}
-            </div>
+            {(currentUser as any).profileImage ? (
+              <img
+                src={(currentUser as any).profileImage}
+                alt={currentUser.name}
+                className="w-10 h-10 rounded-full object-cover mr-3"
+              />
+            ) : (
+              <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center text-white mr-3">
+                {currentUser.name.charAt(0)}
+              </div>
+            )}
             <div className="text-sm">
               <div className="text-gray-900">{currentUser.name}</div>
               <div className="text-gray-500">Use-case Owner</div>
             </div>
           </div>
-        </div>
+        </button>
 
         <nav className="flex-1 px-3 py-4">
           <button className="w-full px-4 py-3 mb-2 flex items-center bg-green-50 text-green-700 rounded-lg">
             <FolderOpen className="h-4 w-4 mr-3" />
             My Projects
           </button>
+          {adminUser && (
+            <button
+              onClick={handleContactAdmin}
+              className="w-full px-4 py-3 mb-2 flex items-center text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              <MessageSquare className="h-4 w-4 mr-3" />
+              Contact Admin
+            </button>
+          )}
         </nav>
 
         <div className="p-4 border-t border-gray-200">
@@ -89,7 +265,7 @@ export function UseCaseOwnerDashboard({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
 
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-8 py-6">
@@ -98,13 +274,84 @@ export function UseCaseOwnerDashboard({
               <h1 className="text-2xl text-gray-900 mb-2">Use-case Owner Dashboard</h1>
               <p className="text-gray-600">Upload and monitor your AI system use cases</p>
             </div>
-            <button
-              onClick={() => setShowNewUseCaseModal(true)}
-              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center shadow-sm"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              New Use Case
-            </button>
+            <div className="flex items-center space-x-4">
+              <div className="relative" ref={notificationRef}>
+                <button 
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="relative p-2 text-gray-600 hover:text-gray-900"
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+                
+                {showNotifications && (
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+                    <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                      <h3 className="font-semibold text-gray-900">Notifications</h3>
+                      <button
+                        onClick={() => setShowNotifications(false)}
+                        className="p-1 hover:bg-gray-100 rounded-full"
+                      >
+                        <X className="h-4 w-4 text-gray-500" />
+                      </button>
+                    </div>
+                    <div className="overflow-y-auto flex-1 min-h-0">
+                      {unreadConversations.length === 0 ? (
+                        <div className="p-6 text-center text-gray-500">
+                          <Bell className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                          <p className="text-sm">No unread messages</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-gray-200">
+                          {unreadConversations.map((conv, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => handleNotificationClick(conv)}
+                              className="w-full p-4 text-left hover:bg-gray-50 transition-colors"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center space-x-2 mb-1">
+                                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-medium">
+                                      {conv.fromUserName?.charAt(0) || 'U'}
+                                    </div>
+                                    <div className="font-medium text-gray-900 text-sm truncate">
+                                      {conv.fromUserName}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-gray-600 font-medium mb-1 truncate">
+                                    {conv.projectTitle}
+                                  </div>
+                                  <div className="text-xs text-gray-500 line-clamp-2">
+                                    {conv.lastMessage}
+                                  </div>
+                                </div>
+                                {conv.count > 1 && (
+                                  <span className="ml-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
+                                    {conv.count}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowNewUseCaseModal(true)}
+                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center shadow-sm"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                New Use Case
+              </button>
+            </div>
           </div>
         </div>
 
@@ -247,6 +494,46 @@ export function UseCaseOwnerDashboard({
           currentUser={currentUser}
         />
       )}
+      
+      {/* CHAT PANEL */}
+      {chatPanelOpen && chatAdmin && chatProject && (
+        <ChatPanel
+          project={chatProject}
+          currentUser={currentUser}
+          otherUser={chatAdmin}
+          inline={false}
+          onClose={() => {
+            setChatPanelOpen(false);
+            setChatAdmin(null);
+            setChatProject(null);
+          }}
+          onMessageSent={() => {
+            window.dispatchEvent(new Event('message-sent'));
+            fetchUnreadCount();
+          }}
+          onDeleteConversation={() => {
+            setChatPanelOpen(false);
+            setChatAdmin(null);
+            setChatProject(null);
+            fetchUnreadCount();
+          }}
+        />
+      )}
+
+      {/* PROFILE MODAL */}
+      {showProfile && (
+        <ProfileModal
+          user={currentUser}
+          onClose={() => setShowProfile(false)}
+          onUpdate={(updatedUser) => {
+            if (onUpdateUser) {
+              onUpdateUser(updatedUser);
+            }
+            setShowProfile(false);
+          }}
+          onLogout={onLogout}
+        />
+      )}
     </div>
   );
 }
@@ -331,6 +618,32 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 1. Ana Dokümanı Hazırla (Varsa)
+    // Link ise 'Main Link', Dosya ise 'Main Document' ismini veriyoruz.
+    const mainDocumentObj = docValue ? {
+      name: docType === 'link' ? 'Main Use Case Link' : 'Main Use Case Document',
+      url: docValue,       // Girilen link veya sunucudan dönen dosya yolu
+      contentType: docType // 'link' veya 'file' (İndirme butonunda ikon seçimi için)
+    } : null;
+
+    // 2. Diğer Dosyaları Hazırla (Eğer sürükle-bırak ile başka dosyalar da eklediyse)
+    // (files state'inin yapısına göre data veya url kullanıyoruz)
+    // @ts-ignore
+    const additionalFiles = files.map(f => ({
+      name: f.name,
+      url: f.url || '',    // Varsa URL
+      // @ts-ignore
+      data: f.data,        // Varsa Base64 (Eski yöntem)
+      // @ts-ignore
+      contentType: f.contentType,
+    }));
+
+    // 3. Listeleri Birleştir (Ana doküman en başa)
+    const finalSupportingFiles = mainDocumentObj 
+      ? [mainDocumentObj, ...additionalFiles] 
+      : additionalFiles;
+
     onSubmit({
       title,
       description,
@@ -340,11 +653,10 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
       ownerId: currentUser.id,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      supportingFiles: files.map(f => ({
-        name: f.name,
-        data: f.data,
-        contentType: f.contentType,
-      })),
+      
+      // ✅ GÜNCELLENEN KISIM: Tek bir liste gönderiyoruz
+      supportingFiles: finalSupportingFiles,
+
       extendedInfo: {
         sectionI: {
           systemName,
@@ -396,7 +708,7 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
         }
       }
     });
-  };
+};
 
   const InfoTooltip = ({ content }: { content: string }) => (
     <TooltipProvider>

@@ -1,97 +1,209 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Send, Pin, MessageSquare, Hash } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Send, Pin, MessageSquare, Hash, Loader2 } from 'lucide-react';
 import { User, Project, Message } from '../types';
 import { roleColors } from '../utils/constants';
-import { formatTime, getUserById, getProjectById } from '../utils/helpers';
+import { formatTime, getProjectById } from '../utils/helpers';
+import { api } from '../api';
 
 interface SharedAreaProps {
   currentUser: User;
   projects: Project[];
+  users: User[];
   onBack: () => void;
 }
 
-const mockMessages: Message[] = [
-  {
-    id: '1',
-    userId: 'admin1',
-    text: '📌 Welcome everyone to the Z-Inspection shared discussion area. Please keep discussions focused on ethical evaluation topics.',
-    timestamp: '2024-01-22T09:00:00Z',
-    isPinned: true
-  },
-  {
-    id: '2',
-    userId: 'user1',
-    text: 'I have concerns about the fairness metrics being used in the Healthcare AI project. The demographic parity approach might not be suitable for medical diagnostics.',
-    timestamp: '2024-01-22T10:30:00Z',
-    relatedProject: '1'
-  },
-  {
-    id: '3',
-    userId: 'user2',
-    text: '@Sarah Johnson That\'s a valid point. In healthcare, we often need to consider equalized odds rather than demographic parity to maintain clinical effectiveness.',
-    timestamp: '2024-01-22T10:45:00Z',
-    replyTo: '2',
-    relatedProject: '1',
-    mentions: ['user1']
-  },
-  {
-    id: '4',
-    userId: 'user3',
-    text: 'From a medical perspective, I agree with both of you. Patient safety should be the primary concern, even if it means accepting some statistical disparities.',
-    timestamp: '2024-01-22T11:00:00Z',
-    relatedProject: '1'
-  },
-  {
-    id: '5',
-    userId: 'admin1',
-    text: 'Great discussion! Let\'s document these insights as formal claims in the Healthcare AI project. @Mike Chen could you create a technical claim about the fairness metrics?',
-    timestamp: '2024-01-22T11:15:00Z',
-    mentions: ['user2'],
-    relatedProject: '1'
-  }
-];
+interface SharedDiscussionResponse {
+  _id: string;
+  userId: {
+    _id: string;
+    name: string;
+    email: string;
+    role: string;
+  };
+  text: string;
+  projectId?: {
+    _id: string;
+    title: string;
+  };
+  isPinned: boolean;
+  replyTo?: any;
+  mentions?: any[];
+  createdAt: string;
+  updatedAt: string;
+}
 
-const mockUsers: User[] = [
-  { id: 'admin1', email: 'admin@zinspection.com', name: 'Admin User', role: 'admin' },
-  { id: 'user1', email: 'legal@zinspection.com', name: 'Sarah Johnson', role: 'legal' },
-  { id: 'user2', email: 'technical@zinspection.com', name: 'Mike Chen', role: 'technical' },
-  { id: 'user3', email: 'medical@zinspection.com', name: 'Dr. Emily Smith', role: 'medical' }
-];
-
-export function SharedArea({ currentUser, projects, onBack }: SharedAreaProps) {
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+export function SharedArea({ currentUser, projects, users, onBack }: SharedAreaProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [selectedProject, setSelectedProject] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
 
   const roleColor = roleColors[currentUser.role as keyof typeof roleColors];
+
+  // Store full discussion data with populated user info
+  const [discussionsData, setDiscussionsData] = useState<SharedDiscussionResponse[]>([]);
+
+  // Fetch discussions from backend
+  useEffect(() => {
+    const fetchDiscussions = async () => {
+      setLoading(true);
+      try {
+        const projectParam = selectedProject !== 'all' ? `projectId=${selectedProject}` : '';
+        const url = projectParam ? api(`/api/shared-discussions?${projectParam}`) : api('/api/shared-discussions');
+        const response = await fetch(url);
+        if (response.ok) {
+          const data: SharedDiscussionResponse[] = await response.json();
+          setDiscussionsData(data);
+          // Transform backend response to frontend Message format
+          const transformedMessages: Message[] = data.map((discussion) => ({
+            id: discussion._id,
+            userId: discussion.userId._id,
+            text: discussion.text,
+            timestamp: discussion.createdAt,
+            isPinned: discussion.isPinned,
+            relatedProject: discussion.projectId?._id,
+            replyTo: discussion.replyTo?._id,
+            mentions: discussion.mentions?.map((m: any) => m._id || m) || []
+          }));
+          setMessages(transformedMessages);
+        } else {
+          console.error('Failed to fetch discussions');
+        }
+      } catch (error) {
+        console.error('Error fetching discussions:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDiscussions();
+  }, [selectedProject]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || sending) return;
+
+    setSending(true);
+    try {
+      const userId = currentUser.id || (currentUser as any)._id;
+      
+      if (!userId) {
+        alert('User ID not found. Please log in again.');
+        setSending(false);
+        return;
+      }
+
+      const projectId = selectedProject !== 'all' ? selectedProject : null;
+
+      const payload = {
+        userId,
+        text: newMessage,
+        projectId: projectId || undefined
+      };
+
+      console.log('Sending message with payload:', payload);
+      console.log('Current user:', currentUser);
+
+      const response = await fetch(api('/api/shared-discussions'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      console.log('Response status:', response.status);
+
+      if (response.ok) {
+        const newDiscussion: SharedDiscussionResponse = await response.json();
+        console.log('Message sent successfully:', newDiscussion);
+        // Add to discussions data
+        setDiscussionsData([newDiscussion, ...discussionsData]);
+        // Transform and add to messages
+        const newMessageObj: Message = {
+          id: newDiscussion._id,
+          userId: newDiscussion.userId._id,
+          text: newDiscussion.text,
+          timestamp: newDiscussion.createdAt,
+          isPinned: newDiscussion.isPinned,
+          relatedProject: newDiscussion.projectId?._id,
+          replyTo: newDiscussion.replyTo?._id,
+          mentions: newDiscussion.mentions?.map((m: any) => m._id || m) || []
+        };
+        setMessages([newMessageObj, ...messages]);
+        setNewMessage('');
+      } else {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || 'Unknown error' };
+        }
+        alert(`Failed to send message: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert(`Failed to send message: ${error instanceof Error ? error.message : 'Please try again.'}`);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const togglePin = async (messageId: string) => {
+    if (currentUser.role !== 'admin') return;
+
+    const message = messages.find(m => m.id === messageId);
+    if (!message) return;
+
+    try {
+      const response = await fetch(api(`/api/shared-discussions/${messageId}/pin`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isPinned: !message.isPinned
+        })
+      });
+
+      if (response.ok) {
+        const updated: SharedDiscussionResponse = await response.json();
+        setMessages(messages.map(msg =>
+          msg.id === messageId
+            ? { ...msg, isPinned: updated.isPinned }
+            : msg
+        ));
+      } else {
+        alert('Failed to update pin status');
+      }
+    } catch (error) {
+      console.error('Error toggling pin:', error);
+      alert('Failed to update pin status');
+    }
+  };
+
+  // Get user info from discussion data or users list
+  const getUserFromMessage = (messageId: string): User | null => {
+    const discussion = discussionsData.find(d => d._id === messageId);
+    if (discussion && discussion.userId) {
+      // Use populated user data from backend
+      return {
+        id: discussion.userId._id,
+        name: discussion.userId.name,
+        email: discussion.userId.email,
+        role: discussion.userId.role as any
+      };
+    }
+    // Fallback to users list
+    const message = messages.find(m => m.id === messageId);
+    if (message) {
+      return users.find(u => u.id === message.userId) || null;
+    }
+    return null;
+  };
 
   const filteredMessages = selectedProject === 'all' 
     ? messages 
     : messages.filter(msg => msg.relatedProject === selectedProject || msg.isPinned);
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-
-    const message: Message = {
-      id: Date.now().toString(),
-      userId: currentUser.id,
-      text: newMessage,
-      timestamp: new Date().toISOString(),
-      relatedProject: selectedProject !== 'all' ? selectedProject : undefined
-    };
-
-    setMessages([...messages, message]);
-    setNewMessage('');
-  };
-
-  const togglePin = (messageId: string) => {
-    if (currentUser.role === 'admin') {
-      setMessages(messages.map(msg => 
-        msg.id === messageId ? { ...msg, isPinned: !msg.isPinned } : msg
-      ));
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -136,11 +248,19 @@ export function SharedArea({ currentUser, projects, onBack }: SharedAreaProps) {
       <div className="flex flex-col h-[calc(100vh-73px)]">
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
-          <div className="max-w-4xl mx-auto space-y-4">
-            {filteredMessages.map(message => {
-              const user = getUserById(message.userId, mockUsers);
-              const project = message.relatedProject ? getProjectById(message.relatedProject, projects) : null;
-              const userColor = user ? roleColors[user.role as keyof typeof roleColors] : '#6B7280';
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            </div>
+          ) : (
+            <div className="max-w-4xl mx-auto space-y-4">
+              {filteredMessages.map(message => {
+                const user = getUserFromMessage(message.id);
+                const discussion = discussionsData.find(d => d._id === message.id);
+                const project = discussion?.projectId 
+                  ? { id: discussion.projectId._id, title: discussion.projectId.title }
+                  : (message.relatedProject ? getProjectById(message.relatedProject, projects) : null);
+                const userColor = user ? roleColors[user.role as keyof typeof roleColors] : '#6B7280';
 
               return (
                 <div key={message.id} className={`${message.isPinned ? 'bg-yellow-50 border border-yellow-200' : 'bg-white border'} rounded-lg p-4 shadow-sm`}>
@@ -191,14 +311,15 @@ export function SharedArea({ currentUser, projects, onBack }: SharedAreaProps) {
               );
             })}
 
-            {filteredMessages.length === 0 && (
-              <div className="text-center py-12">
-                <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg text-gray-900 mb-2">No discussions yet</h3>
-                <p className="text-gray-600">Start the conversation by posting the first message.</p>
-              </div>
-            )}
-          </div>
+              {filteredMessages.length === 0 && !loading && (
+                <div className="text-center py-12">
+                  <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg text-gray-900 mb-2">No discussions yet</h3>
+                  <p className="text-gray-600">Start the conversation by posting the first message.</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Message Input */}
@@ -226,11 +347,15 @@ export function SharedArea({ currentUser, projects, onBack }: SharedAreaProps) {
               
               <button
                 type="submit"
-                disabled={!newMessage.trim()}
+                disabled={!newMessage.trim() || sending}
                 className="px-6 py-3 text-white rounded-lg transition-colors hover:opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
                 style={{ backgroundColor: roleColor }}
               >
-                <Send className="h-4 w-4" />
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </button>
             </form>
           </div>

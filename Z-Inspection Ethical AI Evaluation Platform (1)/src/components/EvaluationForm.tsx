@@ -7,10 +7,7 @@ import {
 import { Project, User, Question, StageKey, QuestionType, UseCase, EthicalPrinciple, Tension } from '../types';
 import { getQuestionsByRole } from '../data/questions'; 
 import { api } from '../api';
-<<<<<<< Updated upstream
 import { EthicalTensionSelector } from './EthicalTensionSelector';
-=======
->>>>>>> Stashed changes
 
 interface EvaluationFormProps {
   project: Project;
@@ -31,7 +28,6 @@ const roleColors: Record<string, string> = {
   'legal-expert': '#B45309'
 };
 
-<<<<<<< Updated upstream
 const riskSeverityOptions = [
   { value: 'low', label: 'Low', className: 'bg-green-50 text-green-700 border-green-200' },
   { value: 'medium', label: 'Medium', className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
@@ -39,8 +35,6 @@ const riskSeverityOptions = [
   { value: 'critical', label: 'Critical', className: 'bg-purple-50 text-purple-700 border-purple-200' },
 ];
 
-=======
->>>>>>> Stashed changes
 export function EvaluationForm({ project, currentUser, onBack, onSubmit }: EvaluationFormProps) {
   // Projenin mevcut stage'ini başlangıç değeri olarak alabiliriz veya 'set-up' ile başlatabiliriz.
   // Ancak kullanıcının kaldığı yerden devam etmesi için 'set-up' ile başlatıp veriyi çekmek daha güvenli.
@@ -100,11 +94,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     const fetchEvaluation = async () => {
       setLoading(true);
       try {
-<<<<<<< Updated upstream
         const response = await fetch(api(`/api/evaluations?projectId=${project.id || (project as any)._id}&userId=${currentUser.id || (currentUser as any)._id}&stage=${currentStage}`));
-=======
-        const response = await fetch(api(`/api/evaluations?projectId=${project._id}&userId=${currentUser._id}&stage=${currentStage}`));
->>>>>>> Stashed changes
         if (response.ok) {
           const data = await response.json();
           // Eğer veritabanında cevaplar varsa state'e yükle
@@ -339,7 +329,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     setIsDraft(true);
   };
 
-<<<<<<< Updated upstream
   // Tension ekleme fonksiyonu
   const handleCreateTension = async (tensionData: any) => {
     try {
@@ -617,8 +606,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     }
   };
 
-=======
->>>>>>> Stashed changes
   const handlePriorityChange = (questionId: string, priority: RiskLevel) => {
     setQuestionPriorities((prev) => ({ ...prev, [questionId]: priority }));
     setIsDraft(true);
@@ -1542,14 +1529,11 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                             <div className="flex items-center gap-2 mb-4">
                                 <AlertTriangle className="w-5 h-5 text-orange-500" />
                                 <h3 className="text-lg font-semibold text-gray-900">Importance Level for This Question</h3>
-<<<<<<< Updated upstream
                                 {currentStage === 'assess' && (
                                     <span className="px-2.5 py-0.5 bg-red-50 text-red-600 text-xs font-medium rounded-full border border-red-100">
                                         Required
                                     </span>
                                 )}
-=======
->>>>>>> Stashed changes
                             </div>
                             <div className="grid grid-cols-3 gap-4 max-w-2xl">
                                 {(['low', 'medium', 'high'] as RiskLevel[]).map((level) => {
