@@ -8,6 +8,14 @@
 const mongoose = require('mongoose');
 require('dotenv').config();
 
+// Helper function for ObjectId validation (compatible with Mongoose v9+)
+const isValidObjectId = (id) => {
+  if (typeof mongoose.isValidObjectId === 'function') {
+    return mongoose.isValidObjectId(id);
+  }
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
 // Connect to MongoDB - Use same connection string as server.js
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin_merve:Sifre123@cluster0.tg8voq1.mongodb.net/zinspection?retryWrites=true&w=majority&appName=Cluster0';
 
@@ -137,7 +145,7 @@ async function migrate() {
           let questionCode = oldKey;
           
           // If it's an ObjectId, try to find the question
-          if (mongoose.Types.ObjectId.isValid(oldKey)) {
+          if (isValidObjectId(oldKey)) {
             const questionById = await Question.findById(oldKey);
             if (questionById) {
               questionCode = questionById.code;

@@ -5,6 +5,14 @@ const nodemailer = require('nodemailer');
 const compression = require('compression');
 require('dotenv').config();
 
+// Helper function for ObjectId validation (compatible with Mongoose v9+)
+const isValidObjectId = (id) => {
+  if (typeof mongoose.isValidObjectId === 'function') {
+    return mongoose.isValidObjectId(id);
+  }
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -241,6 +249,26 @@ const MessageSchema = new mongoose.Schema({
 });
 MessageSchema.index({ projectId: 1, fromUserId: 1, toUserId: 1, createdAt: -1 });
 const Message = mongoose.model('Message', MessageSchema);
+
+// Report - AI Generated Analysis Reports
+const ReportSchema = new mongoose.Schema({
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
+  title: { type: String, default: 'Analysis Report' },
+  content: { type: String, required: true },
+  generatedAt: { type: Date, default: Date.now },
+  generatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  status: { type: String, enum: ['draft', 'final', 'archived'], default: 'draft' },
+  metadata: {
+    totalScores: Number,
+    totalEvaluations: Number,
+    totalTensions: Number,
+    principlesAnalyzed: [String]
+  },
+  version: { type: Number, default: 1 }
+}, { timestamps: true });
+ReportSchema.index({ projectId: 1, generatedAt: -1 });
+ReportSchema.index({ projectId: 1, status: 1 });
+const Report = mongoose.model('Report', ReportSchema);
 
 // SharedDiscussion (Shared Area için)
 const SharedDiscussionSchema = new mongoose.Schema({
@@ -593,10 +621,10 @@ app.post('/api/evaluations', async (req, res) => {
     const { projectId, userId, stage, answers, questionPriorities, riskLevel, generalRisks, status } = req.body;
     
     // Convert IDs to ObjectId if needed
-    const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+    const projectIdObj = isValidObjectId(projectId) 
       ? new mongoose.Types.ObjectId(projectId) 
       : projectId;
-    const userIdObj = mongoose.Types.ObjectId.isValid(userId) 
+    const userIdObj = isValidObjectId(userId) 
       ? new mongoose.Types.ObjectId(userId) 
       : userId;
     
@@ -764,10 +792,10 @@ app.post('/api/general-questions', async (req, res) => {
     const { projectId, userId, userRole, answers, risks, principles } = req.body;
     
     // Convert string IDs to ObjectId if needed
-    const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+    const projectIdObj = isValidObjectId(projectId) 
       ? new mongoose.Types.ObjectId(projectId) 
       : projectId;
-    const userIdObj = mongoose.Types.ObjectId.isValid(userId) 
+    const userIdObj = isValidObjectId(userId) 
       ? new mongoose.Types.ObjectId(userId) 
       : userId;
     
@@ -840,10 +868,10 @@ app.get('/api/general-questions', async (req, res) => {
     const { projectId, userId } = req.query;
     
     // Convert string IDs to ObjectId if needed
-    const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+    const projectIdObj = isValidObjectId(projectId) 
       ? new mongoose.Types.ObjectId(projectId) 
       : projectId;
-    const userIdObj = mongoose.Types.ObjectId.isValid(userId) 
+    const userIdObj = isValidObjectId(userId) 
       ? new mongoose.Types.ObjectId(userId) 
       : userId;
     
@@ -1181,7 +1209,7 @@ app.get('/api/messages/unread-count', async (req, res) => {
     }
     
     // Get unread messages grouped by project and sender
-    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
     const unreadMessages = await Message.find({
       toUserId: userIdObj,
       readAt: null
@@ -1235,7 +1263,7 @@ app.get('/api/messages/conversations', async (req, res) => {
       return res.status(400).json({ error: 'Missing userId parameter' });
     }
 
-    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 
     // Get all messages where user is involved (as sender or receiver)
     const allMessages = await Message.find({
@@ -1308,8 +1336,8 @@ app.delete('/api/messages/delete-conversation', async (req, res) => {
       return res.status(400).json({ error: 'Missing required parameters: projectId, userId, otherUserId' });
     }
 
-    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
-    const otherUserIdObj = mongoose.Types.ObjectId.isValid(otherUserId) ? new mongoose.Types.ObjectId(otherUserId) : otherUserId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    const otherUserIdObj = isValidObjectId(otherUserId) ? new mongoose.Types.ObjectId(otherUserId) : otherUserId;
 
     // Delete all messages in this conversation
     const result = await Message.deleteMany({
@@ -1356,7 +1384,7 @@ app.get('/api/users/:id/profile-image', async (req, res) => {
   try {
     const userId = req.params.id;
     
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!isValidObjectId(userId)) {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     
@@ -1378,7 +1406,7 @@ app.get('/api/users/:id', async (req, res) => {
   try {
     const userId = req.params.id;
     
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!isValidObjectId(userId)) {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     
@@ -1408,7 +1436,7 @@ app.post('/api/users/:id/profile-image', async (req, res) => {
     console.log('📸 Profile image update request:', { userId, hasImage: !!image, imageLength: image?.length });
     
     // Validate userId
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!isValidObjectId(userId)) {
       console.log('❌ Invalid user ID:', userId);
       return res.status(400).json({ error: 'Invalid user ID' });
     }
@@ -1443,7 +1471,7 @@ app.post('/api/users/:id/change-password', async (req, res) => {
     
     console.log('🔐 Password change request:', { userId, hasOldPassword: !!oldPassword, hasNewPassword: !!newPassword });
     
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!isValidObjectId(userId)) {
       console.log('❌ Invalid user ID:', userId);
       return res.status(400).json({ error: 'Invalid user ID' });
     }
@@ -1473,7 +1501,7 @@ app.delete('/api/users/:id/delete-account', async (req, res) => {
   try {
     const userId = req.params.id;
     
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!isValidObjectId(userId)) {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     
@@ -1491,7 +1519,7 @@ app.put('/api/users/:id', async (req, res) => {
     const { name } = req.body;
     const userId = req.params.id;
     
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!isValidObjectId(userId)) {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     
@@ -1515,7 +1543,7 @@ app.get('/api/shared-discussions', async (req, res) => {
     const query = {};
     if (projectId && projectId !== 'all') {
       // Convert to ObjectId if valid
-      if (mongoose.Types.ObjectId.isValid(projectId)) {
+      if (isValidObjectId(projectId)) {
         query.projectId = new mongoose.Types.ObjectId(projectId);
       } else {
         query.projectId = projectId;
@@ -1549,7 +1577,7 @@ app.post('/api/shared-discussions', async (req, res) => {
     
     // Convert userId to ObjectId if valid
     let userIdObj;
-    if (mongoose.Types.ObjectId.isValid(userId)) {
+    if (isValidObjectId(userId)) {
       userIdObj = new mongoose.Types.ObjectId(userId);
       // Verify user exists
       const userExists = await User.findById(userIdObj);
@@ -1562,14 +1590,14 @@ app.post('/api/shared-discussions', async (req, res) => {
       return res.status(400).json({ error: 'Invalid userId format' });
     }
 
-    const projectIdObj = projectId && projectId !== 'all' && mongoose.Types.ObjectId.isValid(projectId)
+    const projectIdObj = projectId && projectId !== 'all' && isValidObjectId(projectId)
       ? new mongoose.Types.ObjectId(projectId)
       : (projectId && projectId !== 'all' ? projectId : null);
-    const replyToObj = replyTo && mongoose.Types.ObjectId.isValid(replyTo)
+    const replyToObj = replyTo && isValidObjectId(replyTo)
       ? new mongoose.Types.ObjectId(replyTo)
       : (replyTo || null);
     const mentionsObj = mentions && Array.isArray(mentions)
-      ? mentions.map(m => mongoose.Types.ObjectId.isValid(m) ? new mongoose.Types.ObjectId(m) : m)
+      ? mentions.map(m => isValidObjectId(m) ? new mongoose.Types.ObjectId(m) : m)
       : [];
     
     console.log('✅ Creating discussion with:', { userIdObj, text: text.substring(0, 50), projectIdObj });
@@ -1650,5 +1678,9 @@ app.delete('/api/shared-discussions/:id', async (req, res) => {
 // New Evaluation API Routes
 const evaluationRoutes = require('./routes/evaluationRoutes');
 app.use('/api/evaluations', evaluationRoutes);
+
+// Report Generation Routes (Gemini AI)
+const reportRoutes = require('./routes/reportRoutes');
+app.use('/api/reports', reportRoutes);
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

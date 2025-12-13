@@ -4,6 +4,7 @@ import { Project, User, UseCase } from '../types';
 import { fetchUserProgress } from '../utils/userProgress';
 import { ChatPanel } from './ChatPanel';
 import { ProfileModal } from './ProfileModal';
+import { api } from '../api';
 
 interface AdminDashboardEnhancedProps {
   currentUser: User;
@@ -620,6 +621,7 @@ export function AdminDashboardEnhanced({
             <ReportsTab
               projects={projects}
               riskLevels={riskLevels}
+              currentUser={currentUser}
             />
           )}
 
@@ -1339,16 +1341,238 @@ function ProjectCreationTab({ users, useCases = [], onCreateProject, onClose }: 
   );
 }
 
-function ReportsTab({ projects, riskLevels }: any) {
+function ReportsTab({ projects, riskLevels, currentUser }: any) {
+  const [reports, setReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState<string | null>(null);
+  const [selectedReport, setSelectedReport] = useState<any | null>(null);
+  const [filterProjectId, setFilterProjectId] = useState<string>('');
+
+  // Fetch all reports
+  const fetchReports = async () => {
+    try {
+      setLoading(true);
+      const url = filterProjectId 
+        ? api(`/api/reports?projectId=${filterProjectId}`)
+        : api('/api/reports');
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setReports(data);
+      }
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generate report for a project
+  const handleGenerateReport = async (projectId: string) => {
+    try {
+      setGenerating(projectId);
+      const response = await fetch(api('/api/reports/generate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: projectId,
+          userId: currentUser?.id || currentUser?._id
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert('✅ Rapor başarıyla oluşturuldu!');
+        fetchReports(); // Refresh reports list
+      } else {
+        const error = await response.json();
+        alert('❌ Hata: ' + (error.error || 'Rapor oluşturulamadı'));
+      }
+    } catch (error: any) {
+      console.error('Error generating report:', error);
+      alert('❌ Hata: ' + (error.message || 'Rapor oluşturulamadı'));
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  // View report
+  const handleViewReport = async (reportId: string) => {
+    try {
+      const response = await fetch(api(`/api/reports/${reportId}`));
+      if (response.ok) {
+        const data = await response.json();
+        setSelectedReport(data);
+      } else {
+        alert('Rapor yüklenemedi');
+      }
+    } catch (error) {
+      console.error('Error fetching report:', error);
+      alert('Rapor yüklenemedi');
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, [filterProjectId]);
+
   return (
     <>
       <div className="bg-white border-b border-gray-200 px-8 py-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Reports</h1>
-        <p className="text-gray-600">Analytics and reporting dashboard</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">AI Generated Reports</h1>
+            <p className="text-gray-600">Gemini AI ile oluşturulan analiz raporları</p>
+          </div>
+          <select
+            value={filterProjectId}
+            onChange={(e) => setFilterProjectId(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Tüm Projeler</option>
+            {projects.map((p: any) => (
+              <option key={p.id || p._id} value={p.id || p._id}>
+                {p.title}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div className="flex items-center justify-center py-12 text-gray-500">
-        Reports module coming soon...
+
+      <div className="px-8 py-6">
+        {/* Projects List - Generate Reports */}
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Projeler için Rapor Oluştur</h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {projects.map((project: any) => {
+              const projectId = project.id || project._id;
+              const isGenerating = generating === projectId;
+              const projectReports = reports.filter((r: any) => 
+                (r.projectId?._id || r.projectId) === projectId
+              );
+
+              return (
+                <div
+                  key={projectId}
+                  className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                >
+                  <h3 className="font-medium text-gray-900 mb-2 truncate">{project.title}</h3>
+                  <p className="text-sm text-gray-500 mb-3 line-clamp-2">
+                    {project.shortDescription || project.fullDescription || 'Açıklama yok'}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">
+                      {projectReports.length} rapor
+                    </span>
+                    <button
+                      onClick={() => handleGenerateReport(projectId)}
+                      disabled={isGenerating}
+                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        isGenerating
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {isGenerating ? 'Oluşturuluyor...' : 'Rapor Oluştur'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Reports List */}
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Oluşturulan Raporlar</h2>
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
+          ) : reports.length === 0 ? (
+            <div className="text-center py-12 bg-gray-50 rounded-lg">
+              <p className="text-gray-500 mb-2">Henüz rapor oluşturulmamış</p>
+              <p className="text-sm text-gray-400">Yukarıdaki projeler için rapor oluşturabilirsiniz</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {reports.map((report: any) => {
+                const reportId = report._id || report.id;
+                const projectTitle = report.projectId?.title || 'Bilinmeyen Proje';
+                const generatedBy = report.generatedBy?.name || 'Sistem';
+                const generatedAt = new Date(report.generatedAt || report.createdAt).toLocaleString('tr-TR');
+
+                return (
+                  <div
+                    key={reportId}
+                    className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => handleViewReport(reportId)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900 mb-1">{report.title}</h3>
+                        <p className="text-sm text-gray-600 mb-2">{projectTitle}</p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>Oluşturan: {generatedBy}</span>
+                          <span>•</span>
+                          <span>{generatedAt}</span>
+                          {report.metadata && (
+                            <>
+                              <span>•</span>
+                              <span>{report.metadata.totalScores || 0} puan</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`px-2 py-1 text-xs font-medium rounded ${
+                        report.status === 'final' ? 'bg-green-100 text-green-800' :
+                        report.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {report.status === 'final' ? 'Final' :
+                         report.status === 'archived' ? 'Arşiv' : 'Taslak'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Report View Modal */}
+      {selectedReport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{selectedReport.title}</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {selectedReport.projectId?.title} • {new Date(selectedReport.generatedAt || selectedReport.createdAt).toLocaleString('tr-TR')}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedReport(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="prose max-w-none whitespace-pre-wrap text-gray-700">
+                {selectedReport.content}
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setSelectedReport(null)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

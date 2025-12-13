@@ -4,6 +4,14 @@ const Response = require('../models/response');
 const Question = require('../models/question');
 const Score = require('../models/score');
 
+// Helper function for ObjectId validation (compatible with Mongoose v9+)
+const isValidObjectId = (id) => {
+  if (typeof mongoose.isValidObjectId === 'function') {
+    return mongoose.isValidObjectId(id);
+  }
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
 /**
  * Create or update a project assignment
  */
@@ -205,14 +213,14 @@ async function validateAndMapAnswers(questionnaireKey, answers) {
 async function computeScores(projectId, userId = null, questionnaireKey = null) {
   try {
     const matchStage = { 
-      projectId: mongoose.Types.ObjectId.isValid(projectId) 
+      projectId: isValidObjectId(projectId) 
         ? new mongoose.Types.ObjectId(projectId) 
         : projectId,
       status: 'submitted'
     };
 
     if (userId) {
-      matchStage.userId = mongoose.Types.ObjectId.isValid(userId) 
+      matchStage.userId = isValidObjectId(userId) 
         ? new mongoose.Types.ObjectId(userId) 
         : userId;
     }
@@ -315,7 +323,7 @@ async function computeScores(projectId, userId = null, questionnaireKey = null) 
  */
 async function getHotspotQuestions(projectId, questionnaireKey = null) {
   try {
-    const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+    const projectIdObj = isValidObjectId(projectId) 
       ? new mongoose.Types.ObjectId(projectId) 
       : projectId;
     

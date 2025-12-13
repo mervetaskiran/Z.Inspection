@@ -1,10 +1,18 @@
 const mongoose = require('mongoose');
 
+// Helper function for ObjectId validation (compatible with Mongoose v9+)
+const isValidObjectId = (id) => {
+  if (typeof mongoose.isValidObjectId === 'function') {
+    return mongoose.isValidObjectId(id);
+  }
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
 /**
  * Project-level average score by principle across all experts and questionnaires
  */
 function projectLevelScoresByPrinciple(projectId, questionnaireKey = null) {
-  const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+  const projectIdObj = isValidObjectId(projectId) 
     ? new mongoose.Types.ObjectId(projectId) 
     : projectId;
   
@@ -58,7 +66,7 @@ function projectLevelScoresByPrinciple(projectId, questionnaireKey = null) {
  * Role-level average score by principle for a given project
  */
 function roleLevelScoresByPrinciple(projectId, questionnaireKey = null) {
-  const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+  const projectIdObj = isValidObjectId(projectId) 
     ? new mongoose.Types.ObjectId(projectId) 
     : projectId;
   
@@ -124,7 +132,7 @@ function roleLevelScoresByPrinciple(projectId, questionnaireKey = null) {
  * Hotspot detection: questions with score <= 1
  */
 function hotspotQuestions(projectId, questionnaireKey = null, threshold = 1) {
-  const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+  const projectIdObj = isValidObjectId(projectId) 
     ? new mongoose.Types.ObjectId(projectId) 
     : projectId;
   
@@ -184,7 +192,7 @@ function hotspotQuestions(projectId, questionnaireKey = null, threshold = 1) {
  * Expert completion status for a project
  */
 function expertCompletionStatus(projectId) {
-  const projectIdObj = mongoose.Types.ObjectId.isValid(projectId) 
+  const projectIdObj = isValidObjectId(projectId) 
     ? new mongoose.Types.ObjectId(projectId) 
     : projectId;
   
