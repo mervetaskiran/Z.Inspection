@@ -7,13 +7,22 @@ interface ChatPanelProps {
   currentUser: User;
   otherUser: User;
   onClose: () => void;
-  onMessageSent?: () => void; // Callback to refresh notifications
-  inline?: boolean; // If true, render inline instead of fixed position
-  onDeleteConversation?: () => void; // Callback when conversation is deleted
-  defaultFullscreen?: boolean; // If true, start in fullscreen mode
+  onMessageSent?: () => void;
+  inline?: boolean;
+  onDeleteConversation?: () => void;
+  defaultFullscreen?: boolean;
 }
 
-export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageSent, inline = false, onDeleteConversation, defaultFullscreen = false }: ChatPanelProps) {
+export function ChatPanel({
+  project,
+  currentUser,
+  otherUser,
+  onClose,
+  onMessageSent,
+  inline = false,
+  onDeleteConversation,
+  defaultFullscreen = false
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,11 +32,14 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getId = (x: any) => x?.id || x?._id;
+  const currentUserId = getId(currentUser);
+  const otherUserId = getId(otherUser);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Normalize project id (supports id or _id)
   const normalizedProjectId =
     (project as any).id ||
     (project as any)._id ||
@@ -36,21 +48,27 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
 
   const fetchMessages = async () => {
     try {
+      if (!normalizedProjectId || !currentUserId || !otherUserId) return;
+
       setLoading(true);
       const response = await fetch(
-        `http://127.0.0.1:5000/api/messages/thread?projectId=${normalizedProjectId}&user1=${currentUser.id}&user2=${otherUser.id}`
+        `http://127.0.0.1:5000/api/messages/thread?projectId=${normalizedProjectId}&user1=${currentUserId}&user2=${otherUserId}`
       );
+
       if (response.ok) {
         const data = await response.json();
-        const formatted = data.map((m: any) => ({
-          ...m,
+        const formatted = (data || []).map((m: any) => ({
           id: m._id || m.id,
-          createdAt: m.createdAt || m.timestamp,
-          fromUserId: m.fromUserId?._id || m.fromUserId?.id || m.fromUserId,
-          toUserId: m.toUserId?._id || m.toUserId?.id || m.toUserId,
+          projectId: m.projectId?._id || m.projectId?.id || m.projectId || normalizedProjectId,
+          text: m.text,
+          createdAt: m.createdAt || m.timestamp || new Date().toISOString(),
+          readAt: m.readAt ?? null,
+          fromUserId: m.fromUserId,
+          toUserId: m.toUserId,
         }));
+
         setMessages(formatted);
-        scrollToBottom();
+        setTimeout(scrollToBottom, 0);
       }
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -61,13 +79,15 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
 
   const markAsRead = async () => {
     try {
+      if (!normalizedProjectId || !currentUserId || !otherUserId) return;
+
       await fetch('http://127.0.0.1:5000/api/messages/mark-read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: normalizedProjectId,
-          userId: currentUser.id,
-          otherUserId: otherUser.id,
+          userId: currentUserId,
+          otherUserId: otherUserId,
         }),
       });
     } catch (error) {
@@ -86,33 +106,20 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: normalizedProjectId,
-          userId: currentUser.id,
-          otherUserId: otherUser.id
+          userId: currentUserId,
+          otherUserId: otherUserId
         }),
       });
-      
+
       if (response.ok) {
-        const result = await response.json();
-        console.log('Conversation deleted:', result);
-        // Clear messages
+        await response.json();
         setMessages([]);
-        // Close panel
         onClose();
-        // Call callback if provided
-        if (onDeleteConversation) {
-          onDeleteConversation();
-        }
-        // Dispatch event
+        onDeleteConversation?.();
         window.dispatchEvent(new Event('message-sent'));
       } else {
         const errorText = await response.text();
-        let error;
-        try {
-          error = JSON.parse(errorText);
-        } catch {
-          error = { error: errorText || 'Unknown error' };
-        }
-        alert('Failed to delete conversation: ' + (error.error || 'Unknown error'));
+        alert('Failed to delete conversation: ' + errorText);
       }
     } catch (error) {
       console.error('Error deleting conversation:', error);
@@ -123,55 +130,34 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
   const sendMessage = async () => {
     if (!newMessage.trim() || sending) return;
 
-    // Validate project ID
-    if (!normalizedProjectId || normalizedProjectId === 'temp-chat-' || normalizedProjectId.startsWith('temp-')) {
-      console.error('Invalid project ID:', normalizedProjectId, project);
-      alert('Cannot send message: Invalid project. Please contact support.');
+    if (!normalizedProjectId || normalizedProjectId.startsWith('temp-')) {
+      alert('Cannot send message: Invalid project.');
       return;
     }
 
     try {
       setSending(true);
-      console.log('Sending message:', {
-        projectId: normalizedProjectId,
-        fromUserId: currentUser.id,
-        toUserId: otherUser.id,
-        text: newMessage.trim().substring(0, 50)
-      });
 
       const response = await fetch('http://127.0.0.1:5000/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: normalizedProjectId,
-          fromUserId: currentUser.id,
-          toUserId: otherUser.id,
+          fromUserId: currentUserId,
+          toUserId: otherUserId,
           text: newMessage.trim(),
         }),
       });
 
       if (response.ok) {
-        const result = await response.json();
-        console.log('Message sent successfully:', result);
         setNewMessage('');
         await fetchMessages();
-        scrollToBottom();
-        // Trigger notification refresh
-        if (onMessageSent) {
-          onMessageSent();
-        }
-        // Also dispatch event directly
+        setTimeout(scrollToBottom, 0);
+        onMessageSent?.();
         window.dispatchEvent(new Event('message-sent'));
       } else {
         const errorText = await response.text();
-        let error;
-        try {
-          error = JSON.parse(errorText);
-        } catch {
-          error = { error: errorText || 'Unknown error' };
-        }
-        console.error('Failed to send message:', response.status, error);
-        alert('Failed to send message: ' + (error.error || 'Unknown error'));
+        alert('Failed to send message: ' + errorText);
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -182,40 +168,35 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
   };
 
   useEffect(() => {
-    if (!normalizedProjectId) {
-      console.error('Invalid project ID:', project);
-      return;
-    }
-    
+    if (!normalizedProjectId || !currentUserId || !otherUserId) return;
+
     fetchMessages();
     markAsRead();
 
-    // Auto-refresh every 3 seconds
     refreshIntervalRef.current = setInterval(() => {
       fetchMessages();
     }, 3000);
 
     return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-      }
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
     };
-  }, [normalizedProjectId, currentUser.id, otherUser.id]);
+  }, [normalizedProjectId, currentUserId, otherUserId]);
 
   useEffect(() => {
-    scrollToBottom();
+    setTimeout(scrollToBottom, 0);
   }, [messages]);
 
-  const getSenderName = (message: Message) => {
-    if (typeof message.fromUserId === 'object' && message.fromUserId?.name) {
-      return message.fromUserId.name;
-    }
-    return message.fromUserId === currentUser.id ? currentUser.name : otherUser.name;
+  const getSenderName = (message: any) => {
+    const fromObj = message.fromUserId;
+    if (fromObj && typeof fromObj === 'object' && fromObj.name) return fromObj.name;
+    const fromId = typeof fromObj === 'object' ? (fromObj._id || fromObj.id) : fromObj;
+    return fromId === currentUserId ? currentUser.name : otherUser.name;
   };
 
-  const isFromCurrentUser = (message: Message) => {
-    const fromId = typeof message.fromUserId === 'object' ? message.fromUserId?.id : message.fromUserId;
-    return fromId === currentUser.id;
+  const isFromCurrentUser = (message: any) => {
+    const fromObj = message.fromUserId;
+    const fromId = typeof fromObj === 'object' ? (fromObj._id || fromObj.id) : fromObj;
+    return fromId === currentUserId;
   };
 
   const formatTime = (dateString: string) => {
@@ -229,21 +210,17 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    if (date.toDateString() === today.toDateString()) {
-      return 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    }
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
+    return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   };
 
-  // Group messages by date and sender
-  const groupMessages = (msgs: Message[]) => {
+  const groupMessages = (msgs: any[]) => {
     const grouped: Array<{
       date: string;
       messages: Array<{
-        message: Message;
+        message: any;
         showAvatar: boolean;
         showName: boolean;
         showTime: boolean;
@@ -251,18 +228,15 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
     }> = [];
 
     let currentDate = '';
-    let currentGroup: typeof grouped[0]['messages'] = [];
+    let currentGroup: any[] = [];
 
     msgs.forEach((msg, idx) => {
       const msgDate = new Date(msg.createdAt).toDateString();
       const prevMsg = idx > 0 ? msgs[idx - 1] : null;
       const nextMsg = idx < msgs.length - 1 ? msgs[idx + 1] : null;
 
-      // Check if we need a new date group
       if (msgDate !== currentDate) {
-        if (currentGroup.length > 0) {
-          grouped.push({ date: currentDate, messages: currentGroup });
-        }
+        if (currentGroup.length > 0) grouped.push({ date: currentDate, messages: currentGroup });
         currentDate = msgDate;
         currentGroup = [];
       }
@@ -272,36 +246,30 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
       const nextIsFromMe = nextMsg ? isFromCurrentUser(nextMsg) : false;
       const nextDate = nextMsg ? new Date(nextMsg.createdAt).toDateString() : '';
 
-      // Show avatar if: first message, different sender, or 5+ minutes gap
-      const timeDiffPrev = prevMsg ? (new Date(msg.createdAt).getTime() - new Date(prevMsg.createdAt).getTime()) / 60000 : Infinity;
-      const showAvatar = !prevMsg || !prevIsFromMe || (isFromMe !== prevIsFromMe) || timeDiffPrev > 5;
+      const timeDiffPrev = prevMsg
+        ? (new Date(msg.createdAt).getTime() - new Date(prevMsg.createdAt).getTime()) / 60000
+        : Infinity;
+      const showAvatar = !prevMsg || (isFromMe !== prevIsFromMe) || timeDiffPrev > 5;
 
-      // Show name if not from me and (first message or different sender)
       const showName = !isFromMe && (!prevMsg || isFromMe !== prevIsFromMe);
 
-      // Show time if: last message, different sender, or 5+ minutes gap, or different date
-      const timeDiffNext = nextMsg ? (new Date(nextMsg.createdAt).getTime() - new Date(msg.createdAt).getTime()) / 60000 : Infinity;
-      const showTime = !nextMsg || isFromMe !== nextIsFromMe || timeDiffNext > 5 || msgDate !== nextDate;
+      const timeDiffNext = nextMsg
+        ? (new Date(nextMsg.createdAt).getTime() - new Date(msg.createdAt).getTime()) / 60000
+        : Infinity;
+      const showTime = !nextMsg || (isFromMe !== nextIsFromMe) || timeDiffNext > 5 || msgDate !== nextDate;
 
-      currentGroup.push({
-        message: msg,
-        showAvatar,
-        showName,
-        showTime,
-      });
+      currentGroup.push({ message: msg, showAvatar, showName, showTime });
     });
 
-    if (currentGroup.length > 0) {
-      grouped.push({ date: currentDate, messages: currentGroup });
-    }
-
+    if (currentGroup.length > 0) grouped.push({ date: currentDate, messages: currentGroup });
     return grouped;
   };
 
+  // Minimized (only for non-inline mode)
   if (isMinimized && !inline) {
     return (
       <div className="fixed bottom-4 right-4 w-80 bg-white shadow-2xl rounded-lg border border-gray-200 z-50">
-        <div 
+        <div
           className="bg-gray-50 border-b border-gray-200 p-3 flex items-center justify-between cursor-pointer rounded-t-lg"
           onClick={() => setIsMinimized(false)}
         >
@@ -339,18 +307,25 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
     );
   }
 
-  // If inline mode, don't use fixed positioning
+  // Layout classes
   const containerClasses = inline
-    ? `flex flex-col h-full bg-white border border-gray-200 overflow-hidden`
-    : `fixed ${isFullscreen ? 'inset-0' : 'bottom-4 right-4 w-96'} bg-white shadow-2xl flex flex-col z-50 border border-gray-200 rounded-lg overflow-hidden`;
-  
-  // Calculate height for fixed mode (not fullscreen) - ensure it fits viewport
+    ? `w-full h-full max-w-full bg-white border border-gray-200 overflow-hidden flex flex-col min-h-0`
+    : `fixed ${isFullscreen ? 'inset-0' : 'bottom-4 right-4 w-96'} bg-white shadow-2xl z-50 border border-gray-200 rounded-lg overflow-hidden flex flex-col min-h-0`;
+
   const fixedHeight = isFullscreen ? '100vh' : `min(600px, calc(100vh - 2rem))`;
 
   return (
-    <div className={containerClasses} style={!inline && !isFullscreen ? { height: fixedHeight } : undefined}>
+    // ✅ ÖNEMLİ: flex + min-h-0 (input'un en alta oturması için)
+    <div
+      className={containerClasses}
+      style={
+        inline
+          ? { height: '100%' }
+          : (!isFullscreen ? { height: fixedHeight } : undefined)
+      }
+    >
       {/* Header */}
-      <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between">
+      <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between shrink-0">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center">
             {otherUser.name?.charAt(0) || 'U'}
@@ -361,7 +336,6 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          {/* Delete conversation button */}
           <button
             onClick={handleDeleteConversation}
             className="p-2.5 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
@@ -369,6 +343,7 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
           >
             <Trash2 className="h-5 w-5" />
           </button>
+
           {!inline && (
             <button
               onClick={() => setIsMinimized(true)}
@@ -378,6 +353,7 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
               <Minimize2 className="h-5 w-5 text-gray-600" />
             </button>
           )}
+
           <button
             onClick={onClose}
             className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors"
@@ -388,7 +364,7 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
         </div>
       </div>
 
-      {/* Messages */}
+      {/* Messages (scroll area) */}
       <div className="flex-1 overflow-y-auto bg-gray-50 min-h-0">
         {loading && messages.length === 0 ? (
           <div className="text-center text-gray-500 py-8">Loading messages...</div>
@@ -400,22 +376,18 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
         ) : (
           groupMessages(messages).map((group, groupIdx) => (
             <div key={groupIdx} className="py-2">
-              {/* Date Separator */}
               <div className="flex items-center justify-center my-4">
                 <div className="bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded-full">
                   {formatDate(group.messages[0].message.createdAt)}
                 </div>
               </div>
 
-              {/* Messages in this group */}
               <div className="px-4 space-y-1">
                 {group.messages.map(({ message, showAvatar, showName, showTime }) => {
                   const isFromMe = isFromCurrentUser(message);
+
                   return (
-                    <div
-                      key={message.id}
-                      className={`flex ${isFromMe ? 'justify-end' : 'justify-start'} group`}
-                    >
+                    <div key={message.id} className={`flex ${isFromMe ? 'justify-end' : 'justify-start'} group`}>
                       {!isFromMe && (
                         <div className="flex-shrink-0 mr-2 self-end">
                           {showAvatar ? (
@@ -427,12 +399,12 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
                           )}
                         </div>
                       )}
+
                       <div className={`flex flex-col ${isFromMe ? 'items-end' : 'items-start'} max-w-[70%]`}>
                         {showName && !isFromMe && (
-                          <div className="text-xs font-medium text-gray-600 mb-1 px-1">
-                            {getSenderName(message)}
-                          </div>
+                          <div className="text-xs font-medium text-gray-600 mb-1 px-1">{getSenderName(message)}</div>
                         )}
+
                         <div
                           className={`rounded-lg px-3 py-2 ${
                             isFromMe
@@ -442,16 +414,13 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
                         >
                           <div className="text-sm whitespace-pre-wrap break-words">{message.text}</div>
                           {showTime && (
-                            <div
-                              className={`text-xs mt-1 ${
-                                isFromMe ? 'text-blue-100' : 'text-gray-500'
-                              }`}
-                            >
+                            <div className={`text-xs mt-1 ${isFromMe ? 'text-blue-100' : 'text-gray-500'}`}>
                               {formatTime(message.createdAt)}
                             </div>
                           )}
                         </div>
                       </div>
+
                       {isFromMe && (
                         <div className="flex-shrink-0 ml-2 self-end">
                           {showAvatar ? (
@@ -473,14 +442,14 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input - Always visible for all roles */}
-      <div className="border-t border-gray-200 p-4 bg-white">
+      {/* ✅ Input (en alta sabit) */}
+      <div className="border-t border-gray-200 p-4 bg-white mt-auto shrink-0">
         <div className="flex items-center space-x-2">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
@@ -489,7 +458,6 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
             placeholder="Type a message..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={sending}
-            autoFocus
           />
           <button
             onClick={sendMessage}
@@ -507,4 +475,3 @@ export function ChatPanel({ project, currentUser, otherUser, onClose, onMessageS
     </div>
   );
 }
-

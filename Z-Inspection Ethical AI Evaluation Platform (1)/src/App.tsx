@@ -17,7 +17,6 @@ import {
   User,
   Project,
   Tension,
-  UseCaseOwner,
   UseCase,
 } from "./types";
 import { api } from "./api";
@@ -27,7 +26,7 @@ function App() {
   const [currentView, setCurrentView] = useState<string>("dashboard");
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [selectedTension, setSelectedTension] = useState<Tension | null>(null);
-  const [selectedOwner, setSelectedOwner] = useState<UseCaseOwner | null>(null);
+  const [selectedOwner, setSelectedOwner] = useState<User | null>(null);
   const [selectedUseCase, setSelectedUseCase] = useState<UseCase | null>(null);
   
   const [projects, setProjects] = useState<Project[]>([]);
@@ -195,7 +194,7 @@ function App() {
     setSelectedOwner(null);
   };
 
-  const handleViewOwner = (owner: UseCaseOwner) => {
+  const handleViewOwner = (owner: User) => {
     setSelectedOwner(owner);
     setCurrentView("owner-detail");
   };
@@ -385,9 +384,8 @@ function App() {
           <UseCaseOwnerDetail
             owner={selectedOwner}
             currentUser={currentUser}
-            users={users}
             onBack={handleBackToProject}
-            onViewTension={handleViewTension}
+            onViewUseCase={handleViewUseCase}
           />
         ) : null;
       case "general-questions":

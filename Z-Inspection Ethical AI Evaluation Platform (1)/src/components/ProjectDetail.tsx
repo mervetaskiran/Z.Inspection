@@ -3,7 +3,7 @@ import {
   ArrowLeft, Calendar, Users as UsersIcon, Target, BarChart3, Plus,
   FileText, Shield, MessageSquare, User as UserIconLucide, GitBranch, Download
 } from 'lucide-react';
-import { Project, User, Tension, UseCaseOwner, UseCase } from '../types'; // UseCase import etmeyi unutmayın
+import { Project, User, Tension, UseCase } from '../types'; // UseCase import etmeyi unutmayın
 import { UseCaseOwners } from './UseCaseOwners';
 import { TensionCard } from './TensionCard';
 import { AddTensionModal } from './AddTensionModal';
@@ -19,7 +19,7 @@ interface ProjectDetailProps {
   onBack: () => void;
   onStartEvaluation: () => void;
   onViewTension?: (tension: Tension) => void;
-  onViewOwner?: (owner: UseCaseOwner) => void;
+  onViewOwner?: (owner: User) => void;
   onCreateTension?: (data: any) => void;
   initialChatUserId?: string; // Optional: open chat with this user on mount
   initialTab?: 'evaluation' | 'tensions' | 'usecase' | 'owners'; // Optional: set initial tab
@@ -306,7 +306,7 @@ export function ProjectDetail({
   const roleColor = roleColors[currentUser.role as keyof typeof roleColors] || '#1F2937';
   const isAssigned = project.assignedUsers.includes(currentUser.id);
   const progressDisplay = Math.max(0, Math.min(100, userProgress));
-  const canViewOwners = currentUser.role === 'admin' || currentUser.role === 'ethical-expert';
+  const canViewOwners = currentUser.role === 'admin';
 
   // Use Case Owner ismini bulma
   const useCaseOwnerName = linkedUseCase ? users.find(u => u.id === linkedUseCase.ownerId)?.name : 'Unknown';
@@ -744,7 +744,7 @@ export function ProjectDetail({
             )}
             
             {activeTab === 'owners' && canViewOwners && onViewOwner && (
-               <UseCaseOwners currentUser={currentUser} projects={[project]} onViewOwner={onViewOwner} />
+               <UseCaseOwners currentUser={currentUser} projects={[project]} users={users} onViewOwner={onViewOwner} />
             )}
           </div>
         </div>

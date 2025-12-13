@@ -111,15 +111,24 @@ export interface Evaluation {
   }>;
 }
 
+export interface MessageUserRef {
+  _id?: string;
+  id?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+}
+
 export interface Message {
-  id: string;
-  userId: string;
+  id: string;          // backend _id
+  projectId: string;   // backend projectId
+
+  fromUserId: string | MessageUserRef;
+  toUserId: string | MessageUserRef;
+
   text: string;
-  timestamp: string;
-  isPinned?: boolean;
-  relatedProject?: string;
-  replyTo?: string;
-  mentions?: string[];
+  createdAt: string;   // backend createdAt (ISO)
+  readAt?: string | null;
 }
 
 export interface Evidence {

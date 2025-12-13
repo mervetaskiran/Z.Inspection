@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Search, Users, Globe, Mail, MessageSquare, Clock } from 'lucide-react';
 import { User, Project, Message } from '../types';
 import { ChatPanel } from './ChatPanel';
@@ -18,14 +18,51 @@ export function OtherMembers({ currentUser, users, projects, onBack }: OtherMemb
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'members' | 'chats'>('members');
   const [conversations, setConversations] = useState<any[]>([]);
+  const [conversationStore, setConversationStore] = useState<any[]>([]);
   const [chatPanelOpen, setChatPanelOpen] = useState(false);
   const [chatOtherUser, setChatOtherUser] = useState<User | null>(null);
   const [chatProject, setChatProject] = useState<Project | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<any | null>(null);
+
+  const getId = (x: any) => x?.id || x?._id;
+  const currentUserId = getId(currentUser);
+
+
+  // Conversation list: API + selected (even if panel kapalı)
+  const conversationList = useMemo(() => {
+    let list = [...conversationStore];
+    const appendIfMissing = (conv: any) => {
+      if (!conv) return;
+      const exists = list.some(
+        (c) => c.projectId === conv.projectId && c.otherUserId === conv.otherUserId
+      );
+      if (!exists) list = [...list, conv];
+    };
+
+    // Seçili konuşma
+    if (selectedConversation) appendIfMissing(selectedConversation);
+
+    // Açık chat (yeni başlatılmış) listede yoksa ekle
+    if (chatOtherUser && chatProject) {
+      appendIfMissing({
+        projectId: chatProject.id,
+        projectTitle: chatProject.title,
+        otherUserId: chatOtherUser.id,
+        otherUserName: chatOtherUser.name,
+        otherUserRole: chatOtherUser.role,
+        lastMessage: '',
+        lastMessageTime: new Date().toISOString(),
+        unreadCount: 0,
+      });
+    }
+
+    return list;
+  }, [conversations, selectedConversation, chatOtherUser, chatProject]);
 
   // Kendim hariç diğer kullanıcılar
   // Admin hariç diğer uzmanlar use-case-owner'ı göremez
   const otherUsers = users.filter((user) => {
-    if (user.id === currentUser.id) return false;
+    if (getId(user) === currentUserId) return false;
     // Admin herkesi görebilir
     if (currentUser.role === 'admin') return true;
     // Diğer uzmanlar use-case-owner'ı göremez
@@ -137,6 +174,16 @@ export function OtherMembers({ currentUser, users, projects, onBack }: OtherMemb
       setChatOtherUser(user);
       setChatProject(commProject);
       setChatPanelOpen(true);
+      setSelectedConversation({
+        projectId: commProject.id,
+        projectTitle: commProject.title,
+        otherUserId: user.id,
+        otherUserName: user.name,
+        otherUserRole: user.role,
+        lastMessage: '',
+        lastMessageTime: new Date().toISOString(),
+        unreadCount: 0,
+      });
     } catch (error) {
       console.error('Error opening chat:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -145,18 +192,66 @@ export function OtherMembers({ currentUser, users, projects, onBack }: OtherMemb
   };
 
   // Fetch all conversations (chats)
-  const fetchConversations = async () => {
-    try {
-      // Get all messages where current user is involved
-      const response = await fetch(`http://127.0.0.1:5000/api/messages/conversations?userId=${currentUser.id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setConversations(data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
+const fetchConversations = async () => {
+  try {
+    if (!currentUserId) {
+      console.error("Missing currentUserId", currentUser);
+      return;
     }
-  };
+
+    // Get all messages where current user is involved
+    const response = await fetch(
+      `http://127.0.0.1:5000/api/messages/conversations?userId=${currentUserId}`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+
+      // Güvenli normalize (bazı durumlarda id/_id obje gelebilir diye)
+      const fresh = (data || []).map((c: any) => ({
+        ...c,
+        projectId: c.projectId?.id || c.projectId?._id || c.projectId,
+        otherUserId: c.otherUserId?.id || c.otherUserId?._id || c.otherUserId,
+      }));
+
+      setConversations(fresh);
+
+      setConversationStore((prev) => {
+        const map = new Map<string, any>();
+
+        const upsert = (list: any[]) => {
+          list.forEach((c) => {
+            const pid = c.projectId?.id || c.projectId?._id || c.projectId;
+            const oid = c.otherUserId?.id || c.otherUserId?._id || c.otherUserId;
+
+            const key = `${pid}-${oid}`;
+
+            const existing =
+              map.get(key) ||
+              prev.find((p) => {
+                const pPid = p.projectId?.id || p.projectId?._id || p.projectId;
+                const pOid = p.otherUserId?.id || p.otherUserId?._id || p.otherUserId;
+                return `${pPid}-${pOid}` === key;
+              });
+
+            map.set(key, { ...(existing || {}), ...c, projectId: pid, otherUserId: oid });
+          });
+        };
+
+        upsert(prev);
+        upsert(fresh);
+
+        return Array.from(map.values());
+      });
+    } else {
+      const txt = await response.text();
+      console.error("Failed to fetch conversations", response.status, txt);
+    }
+  } catch (error) {
+    console.error("Error fetching conversations:", error);
+  }
+};
+
 
   useEffect(() => {
     if (activeTab === 'chats') {
@@ -184,6 +279,7 @@ export function OtherMembers({ currentUser, users, projects, onBack }: OtherMemb
     if (otherUser && project) {
       setChatOtherUser(otherUser);
       setChatProject(project);
+      setSelectedConversation(conversation);
       setChatPanelOpen(true);
     }
   };
@@ -238,7 +334,10 @@ export function OtherMembers({ currentUser, users, projects, onBack }: OtherMemb
           <div className="px-6 border-t border-gray-200">
             <div className="flex space-x-1">
               <button
-                onClick={() => setActiveTab('members')}
+                onClick={() => {
+                  setActiveTab('members');
+                  setChatPanelOpen(false);
+                }}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${
                   activeTab === 'members'
                     ? 'text-blue-600 border-b-2 border-blue-600'
@@ -305,7 +404,7 @@ export function OtherMembers({ currentUser, users, projects, onBack }: OtherMemb
       </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 ${activeTab === 'chats' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {activeTab === 'members' ? (
             <div className="px-6 py-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -432,114 +531,145 @@ export function OtherMembers({ currentUser, users, projects, onBack }: OtherMemb
           </div>
         </div>
       ) : (
-        /* Chats List - Microsoft Teams style */
-        <div className="px-6 py-6">
-          <div className="max-w-4xl mx-auto">
-            {conversations.length === 0 ? (
-              <div className="text-center py-12">
-                <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg text-gray-900 mb-2">No conversations yet</h3>
-                <p className="text-gray-600">
-                  Start a conversation with a team member to see it here.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {conversations.map((conv) => {
-                  const otherUser = users.find(u => u.id === conv.otherUserId);
-                  const project = projects.find(p => p.id === conv.projectId);
-                  if (!otherUser || !project) return null;
-
-                  const userColor = roleColors[otherUser.role as keyof typeof roleColors] || '#1F2937';
-                  const hasUnread = conv.unreadCount > 0;
-
-                  return (
-                    <div
-                      key={`${conv.projectId}-${conv.otherUserId}`}
-                      onClick={() => handleOpenChat(conv)}
-                      className={`bg-white rounded-lg border p-4 cursor-pointer hover:shadow-md transition-all ${
-                        hasUnread ? 'border-blue-500 border-l-4' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-start space-x-4">
-                        <div className="relative flex-shrink-0">
-                          <div
-                            className="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-medium"
-                            style={{ backgroundColor: userColor }}
-                          >
-                            {otherUser.name.charAt(0).toUpperCase()}
+        /* Chats - WhatsApp style layout */
+        <div className="flex flex-col h-full">
+          <div className="flex flex-1 min-h-0 h-full border-t border-gray-200">
+            {/* Conversation list */}
+            <div className="w-80 border-r border-gray-200 bg-white overflow-y-auto h-full">
+              {conversationList.length === 0 ? (
+                <div className="text-center py-12">
+                  <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg text-gray-900 mb-2">No conversations yet</h3>
+                  <p className="text-gray-600">Start a conversation to see it here.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 p-3">
+                  {conversationList.map((conv) => {
+                    const otherUser = users.find(u => u.id === conv.otherUserId);
+                    const project = projects.find(p => p.id === conv.projectId);
+                    if (!otherUser) return null;
+                    const userColor = roleColors[otherUser.role as keyof typeof roleColors] || '#1F2937';
+                    const hasUnread = conv.unreadCount > 0;
+                    const isSelected = selectedConversation && selectedConversation.projectId === conv.projectId && selectedConversation.otherUserId === conv.otherUserId;
+                    return (
+                      <div
+                        key={`${conv.projectId}-${conv.otherUserId}`}
+                        onClick={() => handleOpenChat(conv)}
+                        className={`rounded-lg border p-3 cursor-pointer transition-all ${
+                          isSelected ? 'border-blue-500 bg-blue-50' : hasUnread ? 'border-blue-500 border-l-4 bg-white' : 'border-gray-200 bg-white hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-start space-x-3">
+                          <div className="relative flex-shrink-0">
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium"
+                              style={{ backgroundColor: userColor }}
+                            >
+                              {otherUser.name.charAt(0).toUpperCase()}
+                            </div>
+                            {hasUnread && (
+                              <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center text-white text-[10px] font-bold">
+                                {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                              </div>
+                            )}
                           </div>
-                          {hasUnread && (
-                            <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                              {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <h3 className={`text-sm font-semibold ${hasUnread ? 'text-gray-900' : 'text-gray-700'}`}>
+                                  {otherUser.name}
+                                </h3>
+                              </div>
+                              <div className="text-xs text-gray-500 flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {formatTime(conv.lastMessageTime)}
+                              </div>
                             </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center space-x-2">
-                              <h3 className={`text-base font-medium ${hasUnread ? 'text-gray-900' : 'text-gray-700'}`}>
-                                {otherUser.name}
-                              </h3>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                                {formatRoleName(otherUser.role)}
-                              </span>
-                            </div>
-                            <div className="flex items-center text-xs text-gray-500">
-                              <Clock className="h-3 w-3 mr-1" />
-                              {formatTime(conv.lastMessageTime)}
-                            </div>
+                            <p className={`text-sm truncate ${hasUnread ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                              {conv.lastMessage}
+                            </p>
                           </div>
-                          <p className="text-sm text-gray-600 mb-1 truncate">
-                            {project.title}
-                          </p>
-                          <p className={`text-sm ${hasUnread ? 'text-gray-900 font-medium' : 'text-gray-600'} line-clamp-2`}>
-                            {conv.lastMessage}
-                          </p>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Chat area */}
+            <div className="flex-1 bg-white flex flex-col min-h-0 h-full">
+              {chatPanelOpen && chatOtherUser && chatProject ? (
+                <div className="flex-1 min-h-0">
+                  <ChatPanel
+                    project={chatProject}
+                    currentUser={currentUser}
+                    otherUser={chatOtherUser}
+                    inline={true}
+                    defaultFullscreen={false}
+                    onClose={() => {
+                      setChatPanelOpen(false);
+                      fetchConversations();
+                    }}
+                    onMessageSent={() => {
+                      window.dispatchEvent(new Event('message-sent'));
+                      setTimeout(fetchConversations, 1000);
+                    }}
+                    onDeleteConversation={() => {
+                      setChatPanelOpen(false);
+                      fetchConversations();
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-500">
+                  Select a conversation to start chatting.
+                </div>
+              )}
+            </div>
           </div>
         </div>
           )}
         </div>
       </div>
 
-      {/* Chat Panel - Sidebar style */}
-      {chatPanelOpen && chatOtherUser && chatProject && (
-        <div className="w-96 bg-white border-l border-gray-200 flex-shrink-0 flex flex-col overflow-hidden">
-          <ChatPanel
-            project={chatProject}
-            currentUser={currentUser}
-            otherUser={chatOtherUser}
-            inline={true}
-            onClose={() => {
-              setChatPanelOpen(false);
-              setChatOtherUser(null);
-              setChatProject(null);
-              if (activeTab === 'chats') {
+      {/* Chat Panel - Fullscreen overlay */}
+      {activeTab !== 'chats' && chatPanelOpen && chatOtherUser && chatProject && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-white">
+            <button
+              onClick={() => {
+                setChatPanelOpen(false);
                 fetchConversations();
-              }
-            }}
-            onMessageSent={() => {
-              window.dispatchEvent(new Event('message-sent'));
-              if (activeTab === 'chats') {
+              }}
+              className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <div className="text-sm text-gray-500">Chat</div>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ChatPanel
+              project={chatProject}
+              currentUser={currentUser}
+              otherUser={chatOtherUser}
+              inline={true}
+              defaultFullscreen={true}
+              onClose={() => {
+                setChatPanelOpen(false);
+                fetchConversations();
+              }}
+              onMessageSent={() => {
+                window.dispatchEvent(new Event('message-sent'));
                 setTimeout(fetchConversations, 1000);
-              }
-            }}
-            onDeleteConversation={() => {
-              setChatPanelOpen(false);
-              setChatOtherUser(null);
-              setChatProject(null);
-              if (activeTab === 'chats') {
+              }}
+              onDeleteConversation={() => {
+                setChatPanelOpen(false);
                 fetchConversations();
-              }
-            }}
-          />
+              }}
+            />
+          </div>
         </div>
       )}
     </div>
