@@ -408,7 +408,28 @@ export function UseCaseOwnerDashboard({
             </div>
           ) : myUseCases.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {myUseCases.map(useCase => (
+              {myUseCases.map((useCase) => {
+                const getProjectUseCaseId = (p: any): string | null => {
+                  const val = p?.useCase;
+                  if (!val) return null;
+                  if (typeof val === 'string') return val;
+                  return (val.url || val._id || val.id || val.useCaseId || null) as string | null;
+                };
+
+                const useCaseId = ((useCase as any).id || (useCase as any)._id || '').toString();
+                const isLinkedToAnyProject = Boolean(useCaseId) && projects.some((p) => {
+                  const pid = getProjectUseCaseId(p as any);
+                  return pid && pid.toString() === useCaseId;
+                });
+
+                // Display rule: once a use case is linked to a project, "assigned" should appear as "in-review".
+                const displayStatus =
+                  useCase.status === 'assigned' && isLinkedToAnyProject ? 'in-review' : useCase.status;
+
+                // Display rule: show status badge always, but if linked to a project show "In Review" instead of "Assigned".
+                const showStatusBadge = true;
+
+                return (
                 <div
                   key={useCase.id}
                   className="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
@@ -418,11 +439,13 @@ export function UseCaseOwnerDashboard({
                     <div className="flex items-start justify-between mb-3">
                       <h3 className="text-lg text-gray-900 flex-1 mr-2">{useCase.title}</h3>
                       <div className="flex items-center space-x-2">
-                        <span
-                          className={`px-2 py-1 text-xs rounded-full ${statusColors[useCase.status].bg} ${statusColors[useCase.status].text}`}
-                        >
-                          {statusLabels[useCase.status]}
-                        </span>
+                        {showStatusBadge && (
+                          <span
+                            className={`px-2 py-1 text-xs rounded-full ${statusColors[displayStatus].bg} ${statusColors[displayStatus].text}`}
+                          >
+                            {statusLabels[displayStatus]}
+                          </span>
+                        )}
                         <button
                           onClick={async () => {
                             const confirmed = window.confirm(`Delete use case "${useCase.title}"?`);
@@ -497,7 +520,8 @@ export function UseCaseOwnerDashboard({
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-16">

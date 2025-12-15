@@ -106,6 +106,25 @@ function App() {
         };
 
         setCurrentUser(userFrontend);
+
+        // Fetch profile image separately (login response excludes profileImage for performance)
+        (async () => {
+          try {
+            const userId = userDB._id || userDB.id;
+            if (!userId) return;
+            const imgRes = await fetch(api(`/api/users/${userId}/profile-image`));
+            if (imgRes.ok) {
+              const img = await imgRes.json();
+              setCurrentUser((prev) => {
+                if (!prev) return prev;
+                return { ...(prev as any), profileImage: img.profileImage || null } as any;
+              });
+            }
+          } catch (e) {
+            // ignore; avatar fallback will be used
+          }
+        })();
+
         if (role !== "admin") {
           // Server provides `preconditionApproved` flag on the user object
           const approved = (userFrontend as any).preconditionApproved;

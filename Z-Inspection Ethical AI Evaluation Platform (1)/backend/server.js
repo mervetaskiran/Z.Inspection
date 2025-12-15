@@ -466,6 +466,75 @@ app.post('/api/use-cases/:id/supporting-files', async (req, res) => {
   }
 });
 
+// Delete a supporting file from a use case
+// DELETE /api/use-cases/:id/supporting-files?userId=...&name=...&url=...
+// body (optional): { name?: string, url?: string }
+app.delete('/api/use-cases/:id/supporting-files', async (req, res) => {
+  try {
+    const useCaseId = req.params.id;
+    const requesterUserId = (req.query.userId || req.body?.userId || '').toString();
+    const name = (req.query.name || req.body?.name || '').toString() || undefined;
+    const url = (req.query.url || req.body?.url || '').toString() || undefined;
+
+    if (!requesterUserId) {
+      return res.status(400).json({ error: 'Missing userId' });
+    }
+    if (!isValidObjectId(useCaseId)) {
+      return res.status(400).json({ error: 'Invalid use case id' });
+    }
+    if (!isValidObjectId(requesterUserId)) {
+      return res.status(400).json({ error: 'Invalid userId' });
+    }
+    if (!name && !url) {
+      return res.status(400).json({ error: 'Missing file identifier (name or url)' });
+    }
+
+    const useCase = await UseCase.findById(useCaseId);
+    if (!useCase) return res.status(404).json({ error: 'Use case not found' });
+
+    // Verify requester role from DB (do not trust client-provided role)
+    let isAdmin = false;
+    try {
+      const user = await User.findById(requesterUserId).select('role');
+      isAdmin = user?.role === 'admin';
+    } catch {
+      // ignore
+    }
+
+    const isOwner = useCase.ownerId?.toString() === requesterUserId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'Not authorized to delete supporting files' });
+    }
+
+    const list = Array.isArray(useCase.supportingFiles) ? useCase.supportingFiles : [];
+    if (list.length === 0) {
+      return res.status(404).json({ error: 'No supporting files found' });
+    }
+
+    // Remove first match by (name + url) if provided, otherwise by name, otherwise by url
+    const idx = list.findIndex((f) => {
+      if (name && url) return f?.name === name && f?.url === url;
+      if (name) return f?.name === name;
+      if (url) return f?.url === url;
+      return false;
+    });
+
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Supporting file not found' });
+    }
+
+    list.splice(idx, 1);
+    useCase.supportingFiles = list;
+    useCase.updatedAt = new Date();
+    await useCase.save();
+
+    res.json(useCase.supportingFiles);
+  } catch (err) {
+    console.error('Support file delete error', err);
+    res.status(500).json({ error: err.message || 'Failed to delete supporting file' });
+  }
+});
+
 // Tensions - OLUŞTURMA (İlk evidence ile birlikte)
 app.post('/api/tensions', async (req, res) => {
   try {
@@ -1310,11 +1379,17 @@ app.post('/api/projects', async (req, res) => {
     // If a useCase is linked, ensure its owner is assigned to the project (server-side safety).
     if (req.body?.useCase) {
       try {
-        const uc = await UseCase.findById(req.body.useCase).select('ownerId').lean();
+        const uc = await UseCase.findById(req.body.useCase).select('ownerId status').lean();
         const ownerId = uc?.ownerId?.toString();
         if (ownerId) {
           const currentAssigned = Array.isArray(req.body.assignedUsers) ? req.body.assignedUsers.map(String) : [];
           req.body.assignedUsers = Array.from(new Set([...currentAssigned, ownerId]));
+        }
+
+        // Business rule: once a use case is linked to a project, move it from "assigned" to "in-review"
+        // (do not override completed/in-review).
+        if (uc?.status === 'assigned') {
+          await UseCase.findByIdAndUpdate(req.body.useCase, { status: 'in-review', updatedAt: new Date() });
         }
       } catch {
         // ignore; proceed with provided payload

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Clock, TrendingUp, Users, FileText, MessageCircle, AlertCircle, CheckCircle, Download } from 'lucide-react';
+import { ArrowLeft, Clock, TrendingUp, Users, FileText, MessageCircle, AlertCircle, CheckCircle, Download, Upload, Trash2 } from 'lucide-react';
 import { UseCase, User } from '../types';
 import { api } from '../api';
 
@@ -25,9 +25,76 @@ const statusLabels = {
 export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDetailProps) {
   const [uc, setUc] = useState<UseCase>(useCase);
   const [questions, setQuestions] = useState<any[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [isLinkedToProject, setIsLinkedToProject] = useState(false);
   
   useEffect(() => setUc(useCase), [useCase]);
+
+  // When opening details, fetch the full use case doc (list endpoint may omit answers).
+  useEffect(() => {
+    const id = (uc as any)?.id || (uc as any)?._id;
+    if (!id) return;
+
+    const controller = new AbortController();
+    (async () => {
+      setLoadingDetails(true);
+      try {
+        const res = await fetch(api(`/api/use-cases/${id}`), { signal: controller.signal });
+        if (res.ok) {
+          const full = await res.json();
+          setUc((prev) => ({ ...prev, ...full, id: full._id || full.id }));
+        }
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.error('Error fetching use case detail:', err);
+        }
+      } finally {
+        setLoadingDetails(false);
+      }
+    })();
+
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(uc as any)?.id, (uc as any)?._id]);
+
+  // Determine whether this use case is linked to any project (for Status Information text).
+  useEffect(() => {
+    const useCaseId = ((uc as any)?.id || (uc as any)?._id || '').toString();
+    if (!useCaseId) return;
+
+    const getProjectUseCaseId = (p: any): string | null => {
+      const val = p?.useCase;
+      if (!val) return null;
+      if (typeof val === 'string') return val;
+      return (val.url || val._id || val.id || val.useCaseId || null) as string | null;
+    };
+
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(api('/api/projects'), { signal: controller.signal });
+        if (!res.ok) return;
+        const allProjects = await res.json();
+        const linked = Array.isArray(allProjects) && allProjects.some((p: any) => {
+          const pid = getProjectUseCaseId(p);
+          return pid && pid.toString() === useCaseId;
+        });
+        setIsLinkedToProject(Boolean(linked));
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.error('Error checking use case project linkage:', err);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(uc as any)?.id, (uc as any)?._id]);
   
+  // Display rule: once a use case is linked to a project, "assigned" should appear as "in-review".
+  const displayStatus =
+    uc.status === 'assigned' && isLinkedToProject ? 'in-review' : uc.status;
+
   // Fetch questions and merge with answers
   useEffect(() => {
     const fetchQuestions = async () => {
@@ -58,6 +125,7 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
   const assignedExperts = users.filter(u => uc.assignedExperts?.includes(u.id));
 
   const [uploading, setUploading] = useState(false);
+  const [deletingFileName, setDeletingFileName] = useState<string | null>(null);
 
   const handleDownload = (file: { name: string; data?: string; url?: string; contentType?: string }) => {
     if (file.data) {
@@ -72,6 +140,64 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
     }
   };
 
+  const handleDeleteSupportingFile = async (file: any) => {
+    const confirmDelete = window.confirm(`Delete file "${file?.name}"?`);
+    if (!confirmDelete) return;
+
+    const useCaseId = (uc as any)?.id || (uc as any)?._id;
+    const requesterUserId = (currentUser as any)?.id || (currentUser as any)?._id;
+    if (!useCaseId || !requesterUserId) {
+      alert('Use case or user info not ready yet. Please try again in a moment.');
+      return;
+    }
+
+    // Optimistic-only file (local object URL) -> remove locally
+    if (file?._optimistic) {
+      if (file?.url) {
+        try { URL.revokeObjectURL(file.url); } catch {}
+      }
+      setUc((prev) => ({
+        ...prev,
+        supportingFiles: ((prev.supportingFiles as any[]) || []).filter((f: any) => f !== file),
+      }) as UseCase);
+      return;
+    }
+
+    try {
+      setDeletingFileName(file?.name || '');
+      const q = new URLSearchParams({
+        userId: requesterUserId,
+        name: file?.name || '',
+      });
+      // If backend stored a URL, include it for more specific matching
+      if (file?.url) q.set('url', file.url);
+
+      const res = await fetch(api(`/api/use-cases/${useCaseId}/supporting-files?${q.toString()}`), {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        const updatedFiles = await res.json();
+        setUc((prev) => ({ ...prev, supportingFiles: updatedFiles } as UseCase));
+      } else {
+        const text = await res.text().catch(() => '');
+        let msg = 'Failed to delete file.';
+        try {
+          const parsed = JSON.parse(text || '{}');
+          msg = parsed?.error || parsed?.message || msg;
+        } catch {
+          if (text) msg = text;
+        }
+        alert(msg);
+      }
+    } catch (err) {
+      console.error('Delete supporting file error', err);
+      alert('Failed to delete file.');
+    } finally {
+      setDeletingFileName(null);
+    }
+  };
+
   // Owner file upload handler
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -81,6 +207,20 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
     const toUpload: Array<{ name: string; data?: string; contentType?: string }> = [];
     setUploading(true);
 
+    // Optimistic UI: show selected files immediately under Supporting Files
+    const selectedFiles = Array.from(files);
+    const optimistic = selectedFiles.map((f) => ({
+      name: f.name,
+      url: URL.createObjectURL(f),
+      contentType: f.type,
+      _optimistic: true,
+    })) as any[];
+    const optimisticUrls = optimistic.map((x) => x.url).filter(Boolean) as string[];
+    setUc((prev) => ({
+      ...prev,
+      supportingFiles: [...((prev.supportingFiles as any[]) || []), ...optimistic],
+    }) as UseCase);
+
     const readFileAsDataUrl = (f: File) => new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
@@ -89,8 +229,8 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
     });
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const f = selectedFiles[i];
         const dataUrl = await readFileAsDataUrl(f);
         toUpload.push({ name: f.name, data: dataUrl, contentType: f.type });
       }
@@ -105,14 +245,34 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
         const updatedFiles = await res.json();
         setUc(prev => ({ ...prev, supportingFiles: updatedFiles } as UseCase));
         alert('Files uploaded successfully.');
+        // Revoke any temporary object URLs
+        optimisticUrls.forEach((u) => {
+          try { URL.revokeObjectURL(u); } catch {}
+        });
       } else {
         const err = await res.json();
         console.error('Upload failed', err);
         alert('Upload failed.');
+        // Roll back optimistic entries
+        setUc((prev) => ({
+          ...prev,
+          supportingFiles: ((prev.supportingFiles as any[]) || []).filter((f: any) => !f?._optimistic),
+        }) as UseCase);
+        optimisticUrls.forEach((u) => {
+          try { URL.revokeObjectURL(u); } catch {}
+        });
       }
     } catch (err) {
       console.error('Upload error', err);
       alert('Upload failed.');
+      // Roll back optimistic entries
+      setUc((prev) => ({
+        ...prev,
+        supportingFiles: ((prev.supportingFiles as any[]) || []).filter((f: any) => !f?._optimistic),
+      }) as UseCase);
+      optimisticUrls.forEach((u) => {
+        try { URL.revokeObjectURL(u); } catch {}
+      });
     } finally {
       setUploading(false);
       // reset input value if present
@@ -123,7 +283,7 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
         <div className="px-8 py-4">
           <button
             onClick={onBack}
@@ -135,22 +295,23 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
           
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <h1 className="text-2xl text-gray-900 mb-2">{useCase.title}</h1>
+              <h1 className="text-2xl text-gray-900 mb-2">{uc.title}</h1>
               <div className="flex items-center space-x-4 text-sm text-gray-600">
                 <span className="flex items-center">
                   <Clock className="h-4 w-4 mr-1" />
-                  Last updated: {new Date(useCase.updatedAt).toLocaleDateString()}
+                  Last updated: {new Date(uc.updatedAt).toLocaleDateString()}
                 </span>
                 <span
-                  className={`px-3 py-1 text-xs rounded-full ${statusColors[useCase.status].bg} ${statusColors[useCase.status].text}`}
+                  className={`px-3 py-1 text-xs rounded-full ${statusColors[displayStatus].bg} ${statusColors[displayStatus].text}`}
                 >
-                  {statusLabels[useCase.status]}
+                  {statusLabels[displayStatus]}
                 </span>
+                {loadingDetails && <span className="text-xs text-gray-500">(Loading details...)</span>}
               </div>
             </div>
             <div className="text-right">
               <div className="text-sm text-gray-600 mb-1">Progress</div>
-              <div className="text-3xl text-gray-900">{useCase.progress}%</div>
+              <div className="text-3xl text-gray-900">{uc.progress}%</div>
             </div>
           </div>
         </div>
@@ -233,13 +394,27 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
                         <FileText className="h-5 w-5 text-gray-400 mr-3" />
                         <span className="text-sm text-gray-900">{file.name}</span>
                       </div>
-                      <button
-                        onClick={() => handleDownload(file)}
-                        className="text-sm text-blue-600 hover:text-blue-800 inline-flex items-center"
-                      >
-                        <Download className="w-4 h-4 mr-1" />
-                        Download
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleDownload(file)}
+                          className="inline-flex items-center justify-center p-2 rounded-lg text-blue-700 hover:text-blue-900 hover:bg-blue-50 transition-colors"
+                          title="Download"
+                          aria-label="Download"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        {isOwner && (
+                          <button
+                            onClick={() => handleDeleteSupportingFile(file)}
+                            className="inline-flex items-center justify-center p-2 rounded-lg text-red-600 hover:text-red-800 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Delete"
+                            aria-label="Delete"
+                            disabled={uploading || (deletingFileName && deletingFileName === file?.name)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -252,12 +427,25 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
                 <h3 className="text-lg text-gray-900 mb-4">Upload Supporting Files</h3>
                 <div className="space-y-2">
                   <input
+                    id="usecase-supporting-files-input"
                     type="file"
                     multiple
                     onChange={handleFileInput}
-                    className="text-sm text-gray-700"
+                    className="hidden"
                     disabled={uploading}
                   />
+                  <label
+                    htmlFor="usecase-supporting-files-input"
+                    className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                      uploading
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 cursor-pointer'
+                    }`}
+                    aria-disabled={uploading}
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Files
+                  </label>
                   <div className="text-xs text-gray-500">Accepted: PDFs, images, docs. Max size configured server-side.</div>
                 </div>
               </div>
@@ -341,19 +529,19 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
               <div className="space-y-3">
                 <div className="flex items-start">
                   <div className={`w-2 h-2 rounded-full mt-1.5 mr-3 ${
-                    useCase.status === 'completed' ? 'bg-green-500' :
-                    useCase.status === 'in-review' ? 'bg-yellow-500' :
+                    displayStatus === 'completed' ? 'bg-green-500' :
+                    displayStatus === 'in-review' ? 'bg-yellow-500' :
                     'bg-blue-500'
                   }`} />
                   <div>
                     <div className="text-sm text-gray-900">
-                      {useCase.status === 'completed' ? 'Evaluation Complete' :
-                       useCase.status === 'in-review' ? 'Under Expert Review' :
+                      {displayStatus === 'completed' ? 'Evaluation Complete' :
+                       displayStatus === 'in-review' ? 'Under Expert Review' :
                        'Awaiting Assignment'}
                     </div>
                     <div className="text-xs text-gray-600 mt-1">
-                      {useCase.status === 'completed' ? 'Your use case has been approved' :
-                       useCase.status === 'in-review' ? 'Experts are currently reviewing your submission' :
+                      {displayStatus === 'completed' ? 'Your use case has been approved' :
+                       displayStatus === 'in-review' ? 'Experts are currently reviewing your submission' :
                        'Your use case will be assigned to experts soon'}
                     </div>
                   </div>
