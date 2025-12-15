@@ -42,11 +42,17 @@ if (!MONGO_URI) {
 }
 
 // Optimize MongoDB connection with connection pooling
+// Clean connection string (remove appName if it causes issues)
+const cleanMongoUri = MONGO_URI.replace(/&appName=[^&]*/i, '');
+
 mongoose
-  .connect(MONGO_URI, {
+  .connect(cleanMongoUri, {
     maxPoolSize: 10, // Maintain up to 10 socket connections
-    serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+    serverSelectionTimeoutMS: 10000, // Keep trying to send operations for 10 seconds
     socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+    connectTimeoutMS: 10000, // Give up initial connection after 10 seconds
+    retryWrites: true,
+    w: 'majority'
   })
   .then(() => {
     console.log('✅ MongoDB Atlas Bağlantısı Başarılı');
@@ -54,7 +60,13 @@ mongoose
     mongoose.set('bufferCommands', false);
     mongoose.set('strictQuery', false);
   })
-  .catch((err) => console.error('❌ Bağlantı Hatası:', err));
+  .catch((err) => {
+    console.error('❌ Bağlantı Hatası:', err.message);
+    console.error('💡 İpucu: MongoDB Atlas bağlantısı için:');
+    console.error('   1. İnternet bağlantınızı kontrol edin');
+    console.error('   2. MongoDB Atlas IP whitelist\'inize IP adresinizi ekleyin (0.0.0.0/0 tüm IP\'ler için)');
+    console.error('   3. MongoDB kullanıcı adı ve şifresinin doğru olduğundan emin olun');
+  });
 
 
 // --- 2. ŞEMALAR (MODELS) ---
@@ -1297,6 +1309,68 @@ app.get('/api/general-questions/project/:projectId', async (req, res) => {
     const allAnswers = await GeneralQuestionsAnswers.find({ projectId }).populate('userId', 'name email role');
     res.json(allAnswers);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get user progress based on responses collection
+app.get('/api/user-progress', async (req, res) => {
+  try {
+    const { projectId, userId } = req.query;
+    if (!projectId || !userId) {
+      return res.status(400).json({ error: 'projectId and userId are required' });
+    }
+
+    const Response = require('./models/response');
+    const Question = require('./models/question');
+    const ProjectAssignment = require('./models/projectAssignment');
+    
+    const projectIdObj = isValidObjectId(projectId) ? new mongoose.Types.ObjectId(projectId) : projectId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+
+    // Get user's assignment to determine questionnaires
+    const assignment = await ProjectAssignment.findOne({ projectId: projectIdObj, userId: userIdObj });
+    if (!assignment) {
+      return res.json({ progress: 0, answered: 0, total: 0 });
+    }
+
+    // Get all questionnaires for this user
+    const questionnaires = assignment.questionnaires || ['general-v1'];
+    
+    // Get total question count for all questionnaires
+    const totalQuestions = await Question.countDocuments({
+      questionnaireKey: { $in: questionnaires }
+    });
+
+    // Get answered questions count from responses
+    const responses = await Response.find({
+      projectId: projectIdObj,
+      userId: userIdObj,
+      questionnaireKey: { $in: questionnaires }
+    }).select('answers').lean();
+
+    // Count unique answered questions (by questionCode)
+    const answeredQuestionCodes = new Set();
+    responses.forEach(response => {
+      if (response.answers && Array.isArray(response.answers)) {
+        response.answers.forEach(answer => {
+          if (answer.questionCode) {
+            answeredQuestionCodes.add(answer.questionCode);
+          }
+        });
+      }
+    });
+
+    const answeredCount = answeredQuestionCodes.size;
+    const progress = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
+
+    res.json({
+      progress: Math.max(0, Math.min(100, progress)),
+      answered: answeredCount,
+      total: totalQuestions
+    });
+  } catch (err) {
+    console.error('Error calculating user progress:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -333,11 +333,17 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
   };
 
   const getCompletionPercentage = () => {
-    const answered = generalQuestions.filter(q => {
+    if (generalQuestions.length === 0) return 0;
+    
+    const completed = generalQuestions.filter(q => {
       const questionKey = getQuestionKey(q);
-      return answers[q.id] || answers[questionKey] || answers[q.code || ''];
+      const hasAnswer = answers[q.id] || answers[questionKey] || answers[q.code || ''];
+      const hasRisk = risks[q.id] !== undefined || risks[questionKey] !== undefined || risks[q.code || ''] !== undefined;
+      // Both answer and risk score are required for completion
+      return hasAnswer && hasRisk;
     }).length;
-    return Math.round((answered / generalQuestions.length) * 100);
+    
+    return Math.round((completed / generalQuestions.length) * 100);
   };
 
   if (loading || generalQuestions.length === 0) {
@@ -394,10 +400,15 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                 <p className="text-xs text-gray-500 font-medium">Progress</p>
                 <p className="text-sm font-bold text-gray-900">{getCompletionPercentage()}%</p>
               </div>
-              <div className="w-32 bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200">
+              <div className="w-32 bg-gray-200 rounded-full h-3 overflow-hidden border border-gray-300 shadow-inner">
                 <div
-                  className="h-full rounded-full transition-all duration-500 ease-out shadow-sm bg-blue-600"
-                  style={{ width: `${getCompletionPercentage()}%` }}
+                  className="h-full rounded-full transition-all duration-500 ease-out"
+                  style={{ 
+                    width: `${getCompletionPercentage()}%`, 
+                    minWidth: getCompletionPercentage() > 0 ? '2px' : '0',
+                    backgroundColor: '#10b981',
+                    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
+                  }}
                 />
               </div>
             </div>
