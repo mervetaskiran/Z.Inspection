@@ -266,6 +266,9 @@ export function ProjectDetail({
       }
     };
     loadUserProgress();
+    // Progress'i periyodik olarak güncelle (her 3 saniyede bir)
+    const interval = setInterval(loadUserProgress, 3000);
+    return () => clearInterval(interval);
   }, [project, currentUser, users]);
 
   const handleSaveTension = async (data: any) => {
@@ -384,7 +387,7 @@ export function ProjectDetail({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: projectId,
-          userId: currentUser?.id || currentUser?._id
+          userId: currentUser?.id || (currentUser as any)?._id
         })
       });
 

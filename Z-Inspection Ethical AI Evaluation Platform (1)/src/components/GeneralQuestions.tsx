@@ -49,6 +49,7 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generalQuestions, setGeneralQuestions] = useState<GeneralQuestion[]>([]);
+  const [completionPercentage, setCompletionPercentage] = useState(0);
 
   // Convert backend question format to frontend format
   const convertQuestion = (q: any): GeneralQuestion => {
@@ -193,15 +194,73 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                 });
               }
             });
-            setAnswers(loadedAnswers);
-            setRisks(loadedRisks);
+            
+            // Map answers and risks to all possible question key formats for easier lookup
+            const mappedAnswers: Record<string, string> = {};
+            const mappedRisks: Record<string, 0 | 1 | 2 | 3 | 4> = {};
+            
+            generalQuestions.forEach(q => {
+              const questionKey = getQuestionKey(q);
+              // Find answer/risk by matching code, id, or _id
+              const answerValue = loadedAnswers[q.code] || loadedAnswers[q.id] || loadedAnswers[q._id || ''] || loadedAnswers[questionKey];
+              const riskValue = loadedRisks[q.code] !== undefined ? loadedRisks[q.code] : 
+                              (loadedRisks[q.id] !== undefined ? loadedRisks[q.id] : 
+                              (loadedRisks[q._id || ''] !== undefined ? loadedRisks[q._id || ''] : 
+                              loadedRisks[questionKey]));
+              
+              if (answerValue) {
+                // Store under all possible keys for reliable lookup
+                mappedAnswers[q.id] = answerValue;
+                mappedAnswers[questionKey] = answerValue;
+                if (q.code) mappedAnswers[q.code] = answerValue;
+                if (q._id) mappedAnswers[q._id] = answerValue;
+              }
+              
+              if (riskValue !== undefined) {
+                // Store under all possible keys for reliable lookup
+                mappedRisks[q.id] = riskValue;
+                mappedRisks[questionKey] = riskValue;
+                if (q.code) mappedRisks[q.code] = riskValue;
+                if (q._id) mappedRisks[q._id] = riskValue;
+              }
+            });
+            
+            // Merge with loaded answers/risks to preserve any that don't match questions
+            setAnswers({ ...loadedAnswers, ...mappedAnswers });
+            setRisks({ ...loadedRisks, ...mappedRisks });
           } else {
             // Fallback to flat structure
+            const mappedAnswers: Record<string, string> = {};
+            const mappedRisks: Record<string, 0 | 1 | 2 | 3 | 4> = {};
+            
             if (data.answers) {
-              setAnswers(data.answers);
+              generalQuestions.forEach(q => {
+                const questionKey = getQuestionKey(q);
+                const answerValue = data.answers[q.code] || data.answers[q.id] || data.answers[q._id || ''] || data.answers[questionKey];
+                if (answerValue) {
+                  mappedAnswers[q.id] = answerValue;
+                  mappedAnswers[questionKey] = answerValue;
+                  if (q.code) mappedAnswers[q.code] = answerValue;
+                  if (q._id) mappedAnswers[q._id] = answerValue;
+                }
+              });
+              setAnswers({ ...data.answers, ...mappedAnswers });
             }
             if (data.risks) {
-              setRisks(data.risks);
+              generalQuestions.forEach(q => {
+                const questionKey = getQuestionKey(q);
+                const riskValue = data.risks[q.code] !== undefined ? data.risks[q.code] : 
+                                (data.risks[q.id] !== undefined ? data.risks[q.id] : 
+                                (data.risks[q._id || ''] !== undefined ? data.risks[q._id || ''] : 
+                                data.risks[questionKey]));
+                if (riskValue !== undefined) {
+                  mappedRisks[q.id] = riskValue;
+                  mappedRisks[questionKey] = riskValue;
+                  if (q.code) mappedRisks[q.code] = riskValue;
+                  if (q._id) mappedRisks[q._id] = riskValue;
+                }
+              });
+              setRisks({ ...data.risks, ...mappedRisks });
             }
           }
         }
@@ -337,14 +396,36 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
     
     const completed = generalQuestions.filter(q => {
       const questionKey = getQuestionKey(q);
-      const hasAnswer = answers[q.id] || answers[questionKey] || answers[q.code || ''];
-      const hasRisk = risks[q.id] !== undefined || risks[questionKey] !== undefined || risks[q.code || ''] !== undefined;
+      // Check all possible key formats for answer
+      const hasAnswer = !!(
+        answers[q.id] || 
+        answers[questionKey] || 
+        answers[q.code || ''] ||
+        answers[q._id || '']
+      );
+      // Check all possible key formats for risk
+      const hasRisk = (
+        risks[q.id] !== undefined || 
+        risks[questionKey] !== undefined || 
+        risks[q.code || ''] !== undefined ||
+        risks[q._id || ''] !== undefined
+      );
       // Both answer and risk score are required for completion
       return hasAnswer && hasRisk;
     }).length;
     
     return Math.round((completed / generalQuestions.length) * 100);
   };
+
+  // Update completion percentage whenever answers, risks, or questions change
+  useEffect(() => {
+    if (generalQuestions.length > 0) {
+      const percentage = getCompletionPercentage();
+      setCompletionPercentage(percentage);
+    } else {
+      setCompletionPercentage(0);
+    }
+  }, [answers, risks, generalQuestions]);
 
   if (loading || generalQuestions.length === 0) {
     return (
@@ -398,14 +479,14 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
             <div className="flex items-center space-x-4">
               <div className="text-right">
                 <p className="text-xs text-gray-500 font-medium">Progress</p>
-                <p className="text-sm font-bold text-gray-900">{getCompletionPercentage()}%</p>
+                <p className="text-sm font-bold text-gray-900">{completionPercentage}%</p>
               </div>
               <div className="w-48 bg-gray-200 rounded-full h-5 overflow-hidden border border-gray-300">
                 <div
                   className="h-full rounded-full transition-all duration-500 ease-out bg-gradient-to-r from-green-500 to-green-600"
                   style={{ 
-                    width: `${getCompletionPercentage()}%`, 
-                    minWidth: getCompletionPercentage() > 0 ? '8px' : '0',
+                    width: `${completionPercentage}%`, 
+                    minWidth: completionPercentage > 0 ? '8px' : '0',
                   }}
                 />
               </div>
@@ -537,26 +618,39 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                   { value: 0, label: 'Unacceptable', labelTr: 'Kabul Edilemez', desc: 'No awareness, serious risk', color: 'red' }
                 ] as const).map(({ value, label, labelTr, desc, color }) => {
                   const questionKey = getQuestionKey(currentQuestion);
-                  const riskValue = risks[currentQuestion.id] !== undefined ? risks[currentQuestion.id] : (risks[questionKey] !== undefined ? risks[questionKey] : risks[currentQuestion.code || '']);
-                  const isSelected = riskValue === value;
+                  // Get risk value - check all possible keys and handle undefined/null properly
+                  // Must use !== undefined check because 0 is falsy but valid
+                  let riskValue: number | undefined = undefined;
+                  if (currentQuestion.id && (risks[currentQuestion.id] === 0 || risks[currentQuestion.id] === 1 || risks[currentQuestion.id] === 2 || risks[currentQuestion.id] === 3 || risks[currentQuestion.id] === 4)) {
+                    riskValue = risks[currentQuestion.id];
+                  } else if (risks[questionKey] === 0 || risks[questionKey] === 1 || risks[questionKey] === 2 || risks[questionKey] === 3 || risks[questionKey] === 4) {
+                    riskValue = risks[questionKey];
+                  } else if (currentQuestion.code && (risks[currentQuestion.code] === 0 || risks[currentQuestion.code] === 1 || risks[currentQuestion.code] === 2 || risks[currentQuestion.code] === 3 || risks[currentQuestion.code] === 4)) {
+                    riskValue = risks[currentQuestion.code];
+                  }
+                  
+                  // Use explicit equality checks to handle 0 and 1 correctly
+                  // Check if riskValue is a valid number (0-4) and equals the current value
+                  const isSelected = (riskValue === 0 || riskValue === 1 || riskValue === 2 || riskValue === 3 || riskValue === 4) && riskValue === value;
+                  
                   const colorClasses = {
-                    green: isSelected ? 'border-green-500 bg-green-50 shadow-md' : 'border-gray-200 hover:border-green-300',
-                    blue: isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300',
-                    yellow: isSelected ? 'border-yellow-500 bg-yellow-50 shadow-md' : 'border-gray-200 hover:border-yellow-300',
-                    orange: isSelected ? 'border-orange-500 bg-orange-50 shadow-md' : 'border-gray-200 hover:border-orange-300',
-                    red: isSelected ? 'border-red-500 bg-red-50 shadow-md' : 'border-gray-200 hover:border-red-300'
+                    green: isSelected ? 'border-green-500 bg-green-50 shadow-md' : 'border-gray-200 hover:border-green-300 hover:bg-green-50/30',
+                    blue: isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/30',
+                    yellow: isSelected ? 'border-yellow-500 bg-yellow-50 shadow-md' : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50/30',
+                    orange: isSelected ? 'border-orange-500 bg-orange-200 shadow-md' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50',
+                    red: isSelected ? 'border-red-500 bg-red-200 shadow-md' : 'border-gray-200 hover:border-red-300 hover:bg-red-50'
                   };
                   const bgColorClasses = {
                     green: isSelected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400',
                     blue: isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400',
                     yellow: isSelected ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400',
-                    orange: isSelected ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-400',
-                    red: isSelected ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-400'
+                    orange: isSelected ? 'bg-orange-200 text-orange-800' : 'bg-gray-100 text-gray-400',
+                    red: isSelected ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'
                   };
                   return (
                     <label
                       key={value}
-                      className={`relative flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${colorClasses[color]} hover:bg-gray-50`}
+                      className={`relative flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${colorClasses[color]}`}
                     >
                       <input
                         type="radio"
@@ -565,10 +659,15 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                         checked={isSelected}
                         onChange={() => {
                           const questionKey = getQuestionKey(currentQuestion);
-                          handleRiskChange(questionKey, value as 0 | 1 | 2 | 3 | 4);
-                          // Also update by id for backward compatibility
+                          const riskValue = value as 0 | 1 | 2 | 3 | 4;
+                          console.log(`Setting risk for question ${questionKey} to ${riskValue}`);
+                          handleRiskChange(questionKey, riskValue);
+                          // Also update by id and code for backward compatibility
                           if (currentQuestion.id !== questionKey) {
-                            handleRiskChange(currentQuestion.id, value as 0 | 1 | 2 | 3 | 4);
+                            handleRiskChange(currentQuestion.id, riskValue);
+                          }
+                          if (currentQuestion.code && currentQuestion.code !== questionKey && currentQuestion.code !== currentQuestion.id) {
+                            handleRiskChange(currentQuestion.code, riskValue);
                           }
                         }}
                         className="hidden"
@@ -579,8 +678,8 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                       <span className={`text-xs font-bold text-center ${isSelected ? 'text-gray-900' : 'text-gray-500'}`}>
                         {label}
                       </span>
-                      <span className="text-xs text-gray-500 text-center mt-1">{labelTr}</span>
-                      <span className="text-xs text-gray-400 text-center mt-1 leading-tight">{desc}</span>
+                      <span className={`text-xs text-center mt-1 ${isSelected ? 'text-gray-700' : 'text-gray-500'}`}>{labelTr}</span>
+                      <span className={`text-xs text-center mt-1 leading-tight ${isSelected ? 'text-gray-600' : 'text-gray-400'}`}>{desc}</span>
                     </label>
                   );
                 })}

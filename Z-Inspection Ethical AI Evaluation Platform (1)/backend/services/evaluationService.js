@@ -29,9 +29,104 @@ async function createAssignment(projectId, userId, role, questionnaires) {
       },
       { new: true, upsert: true }
     );
+    
+    // Initialize responses for all assigned questionnaires
+    await initializeResponses(projectId, userId, role, questionnaires || []);
+    
     return assignment;
   } catch (error) {
     throw new Error(`Failed to create assignment: ${error.message}`);
+  }
+}
+
+/**
+ * Initialize responses for all assigned questionnaires with all questions as unanswered
+ * This ensures data integrity - every assigned question has an entry, even if unanswered
+ */
+async function initializeResponses(projectId, userId, role, questionnaires) {
+  try {
+    const Questionnaire = require('../models/questionnaire');
+    const projectIdObj = isValidObjectId(projectId) ? new mongoose.Types.ObjectId(projectId) : projectId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Get assignment
+    const assignment = await ProjectAssignment.findOne({ projectId: projectIdObj, userId: userIdObj });
+    if (!assignment) {
+      throw new Error('Assignment not found');
+    }
+    
+    // Initialize responses for each questionnaire
+    for (const questionnaireKey of questionnaires) {
+      // Get questionnaire version
+      const questionnaire = await Questionnaire.findOne({ key: questionnaireKey, isActive: true });
+      if (!questionnaire) {
+        console.warn(`⚠️ Questionnaire ${questionnaireKey} not found or inactive, skipping initialization`);
+        continue;
+      }
+      
+      // Get all questions for this questionnaire
+      const questions = await Question.find({ questionnaireKey }).sort({ order: 1 }).lean();
+      
+      if (questions.length === 0) {
+        console.warn(`⚠️ No questions found for questionnaire ${questionnaireKey}`);
+        continue;
+      }
+      
+      // Check if response already exists
+      const existingResponse = await Response.findOne({
+        projectId: projectIdObj,
+        userId: userIdObj,
+        questionnaireKey
+      });
+      
+      if (existingResponse) {
+        // Merge existing answers with missing questions
+        const existingQuestionCodes = new Set(existingResponse.answers.map(a => a.questionCode));
+        const missingQuestions = questions.filter(q => !existingQuestionCodes.has(q.code));
+        
+        if (missingQuestions.length > 0) {
+          const unansweredAnswers = missingQuestions.map(question => ({
+            questionId: question._id,
+            questionCode: question.code,
+            answer: null, // Unanswered
+            score: null,
+            notes: null,
+            evidence: []
+          }));
+          
+          existingResponse.answers.push(...unansweredAnswers);
+          await existingResponse.save();
+          console.log(`✅ Added ${missingQuestions.length} missing questions to existing response for ${questionnaireKey}`);
+        }
+      } else {
+        // Create new response with all questions as unanswered
+        const unansweredAnswers = questions.map(question => ({
+          questionId: question._id,
+          questionCode: question.code,
+          answer: null, // Unanswered
+          score: null,
+          notes: null,
+          evidence: []
+        }));
+        
+        await Response.create({
+          projectId: projectIdObj,
+          assignmentId: assignment._id,
+          userId: userIdObj,
+          role: role,
+          questionnaireKey: questionnaireKey,
+          questionnaireVersion: questionnaire.version,
+          answers: unansweredAnswers,
+          status: 'draft',
+          updatedAt: new Date()
+        });
+        
+        console.log(`✅ Initialized response for ${questionnaireKey} with ${questions.length} unanswered questions`);
+      }
+    }
+  } catch (error) {
+    console.error(`❌ Error initializing responses: ${error.message}`);
+    throw error;
   }
 }
 
@@ -362,11 +457,161 @@ async function getHotspotQuestions(projectId, questionnaireKey = null) {
   }
 }
 
+/**
+ * Ensure all assigned questions are present in response, even if unanswered
+ * This is called when saving answers to ensure data integrity
+ */
+async function ensureAllQuestionsPresent(projectId, userId, questionnaireKey) {
+  try {
+    const projectIdObj = isValidObjectId(projectId) ? new mongoose.Types.ObjectId(projectId) : projectId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Get all questions for this questionnaire
+    const questions = await Question.find({ questionnaireKey }).sort({ order: 1 }).lean();
+    
+    // Get existing response
+    const response = await Response.findOne({
+      projectId: projectIdObj,
+      userId: userIdObj,
+      questionnaireKey
+    });
+    
+    if (!response) {
+      // Response should have been initialized, but if not, initialize it now
+      const assignment = await ProjectAssignment.findOne({ projectId: projectIdObj, userId: userIdObj });
+      if (!assignment) {
+        throw new Error('Assignment not found');
+      }
+      
+      const Questionnaire = require('../models/questionnaire');
+      const questionnaire = await Questionnaire.findOne({ key: questionnaireKey, isActive: true });
+      if (!questionnaire) {
+        throw new Error(`Questionnaire ${questionnaireKey} not found`);
+      }
+      
+      const unansweredAnswers = questions.map(question => ({
+        questionId: question._id,
+        questionCode: question.code,
+        answer: null,
+        score: null,
+        notes: null,
+        evidence: []
+      }));
+      
+      await Response.create({
+        projectId: projectIdObj,
+        assignmentId: assignment._id,
+        userId: userIdObj,
+        role: assignment.role,
+        questionnaireKey: questionnaireKey,
+        questionnaireVersion: questionnaire.version,
+        answers: unansweredAnswers,
+        status: 'draft',
+        updatedAt: new Date()
+      });
+      
+      return;
+    }
+    
+    // Check for missing questions
+    const existingQuestionCodes = new Set(response.answers.map(a => a.questionCode));
+    const missingQuestions = questions.filter(q => !existingQuestionCodes.has(q.code));
+    
+    if (missingQuestions.length > 0) {
+      const unansweredAnswers = missingQuestions.map(question => ({
+        questionId: question._id,
+        questionCode: question.code,
+        answer: null,
+        score: null,
+        notes: null,
+        evidence: []
+      }));
+      
+      response.answers.push(...unansweredAnswers);
+      await response.save();
+      console.log(`✅ Added ${missingQuestions.length} missing questions to response for ${questionnaireKey}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error ensuring all questions present: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Validate that all required questions are answered before submission
+ */
+async function validateSubmission(projectId, userId, questionnaireKey) {
+  try {
+    const projectIdObj = isValidObjectId(projectId) ? new mongoose.Types.ObjectId(projectId) : projectId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Get response
+    const response = await Response.findOne({
+      projectId: projectIdObj,
+      userId: userIdObj,
+      questionnaireKey
+    });
+    
+    if (!response) {
+      throw new Error('Response not found');
+    }
+    
+    // Get all required questions
+    const requiredQuestions = await Question.find({
+      questionnaireKey,
+      required: true
+    }).lean();
+    
+    // Check which required questions are answered
+    const answeredQuestionCodes = new Set();
+    response.answers.forEach(answer => {
+      // Check if answer is actually answered (not null)
+      if (answer.answer !== null && answer.answer !== undefined) {
+        // Check if answer has content
+        const hasContent = 
+          (answer.answer.choiceKey !== null && answer.answer.choiceKey !== undefined) ||
+          (answer.answer.text !== null && answer.answer.text !== undefined && answer.answer.text.trim() !== '') ||
+          (answer.answer.numeric !== null && answer.answer.numeric !== undefined) ||
+          (answer.answer.multiChoiceKeys && answer.answer.multiChoiceKeys.length > 0);
+        
+        if (hasContent) {
+          answeredQuestionCodes.add(answer.questionCode);
+        }
+      }
+    });
+    
+    // Find missing required questions
+    const missingRequired = requiredQuestions.filter(q => !answeredQuestionCodes.has(q.code));
+    
+    if (missingRequired.length > 0) {
+      throw new Error(`Missing required questions: ${missingRequired.map(q => q.code).join(', ')}`);
+    }
+    
+    // Validate data integrity: all assigned questions should be present
+    const allQuestions = await Question.find({ questionnaireKey }).lean();
+    const responseQuestionCodes = new Set(response.answers.map(a => a.questionCode));
+    const missingQuestions = allQuestions.filter(q => !responseQuestionCodes.has(q.code));
+    
+    if (missingQuestions.length > 0) {
+      console.error(`⚠️ DATA INTEGRITY WARNING: ${missingQuestions.length} assigned questions missing from response: ${missingQuestions.map(q => q.code).join(', ')}`);
+      // Auto-fix: add missing questions as unanswered
+      await ensureAllQuestionsPresent(projectId, userId, questionnaireKey);
+    }
+    
+    return true;
+  } catch (error) {
+    throw new Error(`Validation failed: ${error.message}`);
+  }
+}
+
 module.exports = {
   createAssignment,
   saveDraftResponse,
   submitResponse,
   computeScores,
-  getHotspotQuestions
+  getHotspotQuestions,
+  initializeResponses,
+  ensureAllQuestionsPresent,
+  validateSubmission
 };
 

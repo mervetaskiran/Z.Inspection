@@ -12,6 +12,8 @@ export type QuestionOption = string | { value: string; label: string };
 
 export interface Question {
   id: string;
+  _id?: string; // MongoDB _id for backend compatibility
+  code?: string; // Question code (e.g., "T1", "H2") for backend compatibility
   text: string;
   stage: StageKey;
   type: QuestionType;

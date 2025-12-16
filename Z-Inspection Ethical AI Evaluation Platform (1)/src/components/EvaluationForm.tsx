@@ -8,6 +8,7 @@ import { Project, User, Question, StageKey, QuestionType, UseCase, EthicalPrinci
 import { getQuestionsByRole } from '../data/questions'; 
 import { api } from '../api';
 import { EthicalTensionSelector } from './EthicalTensionSelector';
+import { fetchUserProgress } from '../utils/userProgress';
 
 interface EvaluationFormProps {
   project: Project;
@@ -43,6 +44,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [questionPriorities, setQuestionPriorities] = useState<Record<string, RiskLevel>>({}); // Her soru için önem derecesi
+  const [riskScores, setRiskScores] = useState<Record<string, 0 | 1 | 2 | 3 | 4>>({}); // Her soru için risk skoru (0-4)
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('medium');
   const [customQuestions, setCustomQuestions] = useState<Question[]>([]);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
@@ -56,6 +58,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const [tensions, setTensions] = useState<Tension[]>([]);
   const [editingTensionId, setEditingTensionId] = useState<string | null>(null);
   const [votingTensionId, setVotingTensionId] = useState<string | null>(null);
+  const [userProgress, setUserProgress] = useState<number>(0); // Backend'den gelen progress
   
   // Tension form state
   const [principle1, setPrinciple1] = useState<EthicalPrinciple | undefined>();
@@ -103,6 +106,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
           // Eğer veritabanında cevaplar varsa state'e yükle
           if (data.answers) setAnswers(data.answers);
           if (data.questionPriorities) setQuestionPriorities(data.questionPriorities); // Soru önem derecelerini yükle
+          if (data.riskScores) setRiskScores(data.riskScores); // Risk skorlarını yükle
           if (data.riskLevel) setRiskLevel(data.riskLevel as RiskLevel);
           // Genel riskleri yükle - eğer veritabanında varsa yükle
           if (data.generalRisks && Array.isArray(data.generalRisks)) {
@@ -183,7 +187,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     }
     
     // Debug: Soru ID'lerini ve cevapları kontrol et
-    console.log('Current Questions:', currentQuestions.map(q => ({ id: q.id, code: q.code, _id: q._id })));
+    console.log('Current Questions:', currentQuestions.map(q => ({ id: q.id, code: q.code || undefined, _id: q._id || undefined })));
     console.log('Answers keys:', Object.keys(answers));
     console.log('Question Priorities keys:', Object.keys(questionPriorities));
     
@@ -196,11 +200,11 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
         question.id,
         question.code,
         question._id,
-        (question as any)._id?.toString(),
+        question._id?.toString(),
         String(question.id),
-        String(question.code),
-        String(question._id)
-      ].filter(Boolean);
+        question.code ? String(question.code) : undefined,
+        question._id ? String(question._id) : undefined
+      ].filter((id): id is string => id !== undefined && id !== null);
       
       let hasAnswer = false;
       let hasPriority = false;
@@ -228,7 +232,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
         }
       }
       
-      console.log(`Question ${i} (${question.id || question.code}): hasAnswer=${hasAnswer}, hasPriority=${hasPriority}`);
+      console.log(`Question ${i} (${question.id || question.code || question._id}): hasAnswer=${hasAnswer}, hasPriority=${hasPriority}`);
       
       // Set-up stage'inde sadece answer yeterli, assess'te hem answer hem priority gerekli
       if (currentStage === 'set-up') {
@@ -279,6 +283,23 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     }
   }, [showReviewScreen, project.id, currentUser.id]);
 
+  // Backend'den progress çek
+  useEffect(() => {
+    const fetchProgress = async () => {
+      try {
+        const progress = await fetchUserProgress(project, currentUser);
+        setUserProgress(progress);
+      } catch (error) {
+        console.error('Error fetching user progress:', error);
+      }
+    };
+    
+    fetchProgress();
+    // Cevaplar değiştiğinde veya kaydetme işlemi sonrasında progress'i güncelle
+    const interval = setInterval(fetchProgress, 2000); // Her 2 saniyede bir güncelle
+    return () => clearInterval(interval);
+  }, [project, currentUser, answers, saving]);
+
   const activeQuestion = currentQuestions[currentQuestionIndex];
   const isLastQuestion = currentQuestions.length > 0 && currentQuestionIndex === currentQuestions.length - 1;
   const isFirstQuestion = currentQuestionIndex === 0;
@@ -296,6 +317,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
           stage: currentStage,
           answers: answers,
           questionPriorities: questionPriorities, // Her soru için önem derecelerini kaydet
+          riskScores: riskScores, // Risk skorlarını kaydet
           riskLevel: riskLevel,
           generalRisks: generalRisks, // Genel riskleri kaydet
           status: status
@@ -717,8 +739,8 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   };
 
   const getCompletionPercentage = () => {
-    if (currentQuestions.length === 0) return 0;
-    return Math.round(((currentQuestionIndex + 1) / currentQuestions.length) * 100);
+    // Backend'den gelen progress'i kullan (tüm soruları kapsar: general + role-specific)
+    return userProgress;
   };
 
   const stages: { key: StageKey; label: string; icon: string }[] = [
@@ -1413,6 +1435,71 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                                             >
                                                 {level}
                                             </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Risk Score Selection (0-4) */}
+                        <div className="mt-8 pt-6 border-t border-gray-200">
+                            <div className="flex items-center gap-2 mb-4">
+                                <h3 className="text-lg font-semibold text-gray-900">Risk Score for This Question</h3>
+                                <span className="px-2.5 py-0.5 bg-red-50 text-red-600 text-xs font-medium rounded-full border border-red-100">
+                                    Required
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-5 gap-3 max-w-4xl">
+                                {([
+                                    { value: 4, label: 'Excellent', labelTr: 'Mükemmel', desc: 'Clear understanding, high confidence', color: 'green' },
+                                    { value: 3, label: 'Good', labelTr: 'İyi', desc: 'Minor gaps but generally appropriate', color: 'blue' },
+                                    { value: 2, label: 'Moderate', labelTr: 'Orta', desc: 'Basic awareness, notable gaps', color: 'yellow' },
+                                    { value: 1, label: 'Poor', labelTr: 'Zayıf', desc: 'Significant misunderstanding, low confidence', color: 'orange' },
+                                    { value: 0, label: 'Unacceptable', labelTr: 'Kabul Edilemez', desc: 'No awareness, serious risk', color: 'red' }
+                                ] as const).map(({ value, label, labelTr, desc, color }) => {
+                                    // Use explicit equality checks to handle 0 and 1 correctly
+                                    // Must check if currentRiskScore is a valid number (0-4) and equals the current value
+                                    const currentRiskScore = riskScores[activeQuestion.id];
+                                    const isSelected = (currentRiskScore === 0 || currentRiskScore === 1 || currentRiskScore === 2 || currentRiskScore === 3 || currentRiskScore === 4) && currentRiskScore === value;
+                                    
+                                    const colorClasses = {
+                                        green: isSelected ? 'border-green-500 bg-green-50 shadow-md' : 'border-gray-200 hover:border-green-300 hover:bg-green-50/30',
+                                        blue: isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/30',
+                                        yellow: isSelected ? 'border-yellow-500 bg-yellow-50 shadow-md' : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50/30',
+                                        orange: isSelected ? 'border-orange-500 bg-orange-200 shadow-md' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50',
+                                        red: isSelected ? 'border-red-500 bg-red-200 shadow-md' : 'border-gray-200 hover:border-red-300 hover:bg-red-50'
+                                    };
+                                    const bgColorClasses = {
+                                        green: isSelected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400',
+                                        blue: isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400',
+                                        yellow: isSelected ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400',
+                                        orange: isSelected ? 'bg-orange-200 text-orange-800' : 'bg-gray-100 text-gray-400',
+                                        red: isSelected ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'
+                                    };
+                                    return (
+                                        <label
+                                            key={value}
+                                            className={`relative flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${colorClasses[color]}`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name={`risk-${activeQuestion.id}`}
+                                                value={value}
+                                                checked={isSelected}
+                                                onChange={() => {
+                                                    setRiskScores((prev) => ({ ...prev, [activeQuestion.id]: value as 0 | 1 | 2 | 3 | 4 }));
+                                                    setIsDraft(true);
+                                                }}
+                                                className="hidden"
+                                            />
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors ${bgColorClasses[color]}`}>
+                                                <span className="text-lg font-bold">{value}</span>
+                                            </div>
+                                            <span className={`text-xs font-bold text-center ${isSelected ? 'text-gray-900' : 'text-gray-500'}`}>
+                                                {label}
+                                            </span>
+                                            <span className={`text-xs text-center mt-1 ${isSelected ? 'text-gray-700' : 'text-gray-500'}`}>{labelTr}</span>
+                                            <span className={`text-xs text-center mt-1 leading-tight ${isSelected ? 'text-gray-600' : 'text-gray-400'}`}>{desc}</span>
                                         </label>
                                     );
                                 })}

@@ -18,6 +18,7 @@ import { ChatPanel } from "./ChatPanel";
 import { formatRoleName } from "../utils/helpers";
 import { ProfileModal } from "./ProfileModal";
 import { api } from "../api";
+import { fetchUserProgress } from "../utils/userProgress";
 
 interface UserDashboardProps {
   currentUser: User;
@@ -88,8 +89,38 @@ export function UserDashboard({
   const [chatOtherUser, setChatOtherUser] = useState<User | null>(null);
   const [chatProject, setChatProject] = useState<Project | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [projectProgresses, setProjectProgresses] = useState<Record<string, number>>({});
 
   const roleColor = roleColors[currentUser.role as keyof typeof roleColors];
+
+  // Fetch progress for all assigned projects
+  useEffect(() => {
+    const fetchAllProgresses = async () => {
+      const progresses: Record<string, number> = {};
+      const assignedProjects = projects.filter(p => p.assignedUsers.includes(currentUser.id));
+      
+      await Promise.all(
+        assignedProjects.map(async (project) => {
+          try {
+            const progress = await fetchUserProgress(project, currentUser);
+            progresses[project.id] = progress;
+          } catch (error) {
+            console.error(`Error fetching progress for project ${project.id}:`, error);
+            progresses[project.id] = project.progress || 0;
+          }
+        })
+      );
+      
+      setProjectProgresses(prev => ({ ...prev, ...progresses }));
+    };
+
+    if (projects.length > 0 && currentUser.id) {
+      fetchAllProgresses();
+      // Progress'i periyodik olarak güncelle (her 3 saniyede bir)
+      const interval = setInterval(fetchAllProgresses, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [projects, currentUser]);
 
   // Fetch unread message count
   const fetchUnreadCount = async () => {
@@ -782,23 +813,27 @@ export function UserDashboard({
                   </div>
 
                   {/* Progress bar (only if assigned) */}
-                  {project.assignedUsers.includes(currentUser.id) && (
-                    <div className="mt-2 mb-4">
-                      <div className="flex justify-between text-xs text-gray-600 mb-1">
-                        <span>Your Progress</span>
-                        <span>{project.progress}%</span>
+                  {project.assignedUsers.includes(currentUser.id) && (() => {
+                    const progress = projectProgresses[project.id] ?? project.progress ?? 0;
+                    const progressDisplay = Math.max(0, Math.min(100, progress));
+                    return (
+                      <div className="mt-2 mb-4">
+                        <div className="flex justify-between text-xs text-gray-600 mb-1">
+                          <span>Your Progress</span>
+                          <span>{progressDisplay}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 h-2 rounded-full">
+                          <div
+                            className="h-2 rounded-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-500"
+                            style={{
+                              width: `${progressDisplay}%`,
+                              minWidth: progressDisplay > 0 ? '8px' : '0',
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div className="w-full bg-gray-200 h-2 rounded-full">
-                        <div
-                          className="h-2 rounded-full"
-                          style={{
-                            width: `${project.progress}%`,
-                            backgroundColor: roleColor,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* ACTIONS */}
                   <div className="flex items-center justify-between mt-4">

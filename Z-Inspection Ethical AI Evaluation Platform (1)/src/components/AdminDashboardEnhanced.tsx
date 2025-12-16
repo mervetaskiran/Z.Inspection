@@ -49,11 +49,21 @@ const ProjectCard: React.FC<{
 
   useEffect(() => {
     let mounted = true;
-    fetchUserProgress(project, currentUser).then((val) => {
-      if (mounted) setUserProgress(val);
-    }).catch(() => {});
+    const fetchProgress = async () => {
+      try {
+        const val = await fetchUserProgress(project, currentUser);
+        if (mounted) setUserProgress(val);
+      } catch (error) {
+        console.error('Error fetching progress:', error);
+      }
+    };
+    
+    fetchProgress();
+    // Progress'i periyodik olarak güncelle (her 3 saniyede bir)
+    const interval = setInterval(fetchProgress, 3000);
     return () => {
       mounted = false;
+      clearInterval(interval);
     };
   }, [project.id, (project as any)._id, currentUser.id, (currentUser as any)._id]);
 
@@ -103,8 +113,8 @@ const ProjectCard: React.FC<{
         </div>
         <div className="w-full bg-gray-100 rounded-full h-1.5">
           <div
-            className="bg-blue-600 h-1.5 rounded-full transition-all"
-            style={{ width: `${progressDisplay}%` }}
+            className="bg-gradient-to-r from-green-500 to-green-600 h-1.5 rounded-full transition-all"
+            style={{ width: `${progressDisplay}%`, minWidth: progressDisplay > 0 ? '8px' : '0' }}
           />
         </div>
       </div>
@@ -918,8 +928,8 @@ function DashboardTab({ projects, searchQuery, setSearchQuery, onViewProject, ri
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-1.5">
                   <div
-                    className="bg-blue-600 h-1.5 rounded-full transition-all"
-                    style={{ width: `${project.progress}%` }}
+                    className="bg-gradient-to-r from-green-500 to-green-600 h-1.5 rounded-full transition-all"
+                    style={{ width: `${project.progress}%`, minWidth: project.progress > 0 ? '8px' : '0' }}
                   />
                 </div>
               </div>
