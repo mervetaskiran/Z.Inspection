@@ -175,6 +175,24 @@ export function EthicalTensionMap({ tensions }: EthicalTensionMapProps) {
                 <div className="space-y-2">
                   {selectedTensionData.tensions.map((tension) => {
                     const colors = getSeverityColor(tension.severity);
+                    
+                    // Consensus yüzdesi hesaplama
+                    const agreeCount = tension.consensus?.agree || 0;
+                    const disagreeCount = tension.consensus?.disagree || 0;
+                    const totalVotes = agreeCount + disagreeCount;
+                    const agreePercentage = totalVotes > 0 
+                      ? (agreeCount === totalVotes ? 100 : Math.round((agreeCount / totalVotes) * 100))
+                      : 0;
+                    
+                    // Yüzdeye göre yeşil renk hesaplama
+                    const getGreenColor = (percentage: number) => {
+                      if (percentage === 0) return '#e5f7e5';
+                      if (percentage <= 25) return '#86efac';
+                      if (percentage <= 50) return '#4ade80';
+                      if (percentage <= 75) return '#22c55e';
+                      return '#16a34a';
+                    };
+                    
                     return (
                       <div
                         key={tension.id}
@@ -186,6 +204,28 @@ export function EthicalTensionMap({ tensions }: EthicalTensionMapProps) {
                             className={`ml-2 w-3 h-3 rounded-full flex-shrink-0 ${colors.badge}`}
                           />
                         </div>
+                        
+                        {/* Consensus Progress Bar */}
+                        {totalVotes > 0 && (
+                          <div className="flex items-center space-x-2 mb-2">
+                            <span className="text-xs text-gray-500 font-medium">Consensus:</span>
+                            <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden shadow-inner relative">
+                              <div 
+                                className="h-full transition-all duration-500 ease-out rounded-full"
+                                style={{ 
+                                  width: `${agreePercentage}%`,
+                                  minWidth: agreePercentage > 0 ? '4px' : '0',
+                                  backgroundColor: getGreenColor(agreePercentage),
+                                  display: agreePercentage > 0 ? 'block' : 'none'
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-500 w-20 text-right">
+                              {agreePercentage}% agree
+                            </span>
+                          </div>
+                        )}
+                        
                         <div className="text-xs text-gray-600">
                           Created: {new Date(tension.createdAt).toLocaleDateString()}
                         </div>

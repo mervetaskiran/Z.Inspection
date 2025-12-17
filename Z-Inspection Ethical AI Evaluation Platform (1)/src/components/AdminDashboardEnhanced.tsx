@@ -725,6 +725,7 @@ export function AdminDashboardEnhanced({
           {activeTab === 'dashboard' && (
             <DashboardTab
               projects={filteredProjects}
+              users={users}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               onViewProject={onViewProject}
@@ -835,7 +836,136 @@ export function AdminDashboardEnhanced({
 
 // --- SUB COMPONENTS ---
 
-function DashboardTab({ projects, searchQuery, setSearchQuery, onViewProject, riskLevels, onCreateNew, onDeleteProject }: any) {
+// Project Progress Component - Atanan kullanıcıların progress ortalamasını hesaplar
+function ProjectProgressCard({ project, users, onViewProject, onDeleteProject }: { project: Project; users: User[]; onViewProject: (p: Project) => void; onDeleteProject: (id: string) => void }) {
+  const [averageProgress, setAverageProgress] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    let mounted = true;
+    
+    const calculateAverageProgress = async () => {
+      if (!project.assignedUsers || project.assignedUsers.length === 0) {
+        if (mounted) {
+          setAverageProgress(0);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const assignedUserIds = project.assignedUsers;
+        const progressPromises = assignedUserIds.map(async (userId: string) => {
+          const user = users.find(u => (u.id || (u as any)._id) === userId);
+          if (!user) return 0;
+          
+          try {
+            const progress = await fetchUserProgress(project, user);
+            return progress;
+          } catch (error) {
+            console.error(`Error fetching progress for user ${userId}:`, error);
+            return 0;
+          }
+        });
+
+        const progresses = await Promise.all(progressPromises);
+        const validProgresses = progresses.filter(p => p > 0);
+        
+        if (validProgresses.length > 0) {
+          const average = validProgresses.reduce((sum, p) => sum + p, 0) / validProgresses.length;
+          if (mounted) {
+            setAverageProgress(Math.round(average));
+            setLoading(false);
+          }
+        } else {
+          if (mounted) {
+            setAverageProgress(0);
+            setLoading(false);
+          }
+        }
+      } catch (error) {
+        console.error('Error calculating average progress:', error);
+        if (mounted) {
+          setAverageProgress(0);
+          setLoading(false);
+        }
+      }
+    };
+
+    calculateAverageProgress();
+    
+    // Progress'i periyodik olarak güncelle (her 5 saniyede bir)
+    const interval = setInterval(calculateAverageProgress, 5000);
+    
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [project.id, (project as any)._id, project.assignedUsers, users]);
+
+  const progressDisplay = Math.max(0, Math.min(100, averageProgress));
+
+  return (
+    <div
+      key={project.id}
+      onClick={() => onViewProject(project)}
+      className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-all cursor-pointer group"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
+            {project.title}
+          </h3>
+          <p className="text-sm text-gray-500 line-clamp-2 h-10">{project.shortDescription}</p>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const confirmed = window.confirm(`Delete project "${project.title}"?`);
+            if (confirmed) {
+              onDeleteProject(project.id);
+            }
+          }}
+          className="ml-3 inline-flex items-center px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          Delete
+        </button>
+      </div>
+
+      <div className="flex items-center space-x-2 mb-4">
+        <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${statusColors[project.status].bg} ${statusColors[project.status].text}`}>
+          {project.status.toUpperCase()}
+        </span>
+        <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full border border-gray-200">
+          {stageLabels[project.stage]}
+        </span>
+      </div>
+
+      <div className="mb-4">
+        <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+          <span>Progress</span>
+          <span className="font-medium text-gray-700">
+            {loading ? '...' : `${progressDisplay}%`}
+          </span>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-1.5">
+          <div
+            className="bg-gradient-to-r from-green-500 to-green-600 h-1.5 rounded-full transition-all"
+            style={{ width: `${progressDisplay}%`, minWidth: progressDisplay > 0 ? '8px' : '0' }}
+          />
+        </div>
+      </div>
+
+      <div className="pt-4 border-t border-gray-100 flex justify-between items-center text-xs text-gray-500">
+        <span>Updated: {new Date(project.createdAt).toLocaleDateString()}</span>
+        {project.isNew && <span className="text-blue-600 font-medium">New Project</span>}
+      </div>
+    </div>
+  );
+}
+
+function DashboardTab({ projects, users, searchQuery, setSearchQuery, onViewProject, riskLevels, onCreateNew, onDeleteProject }: any) {
   return (
     <>
       <div className="bg-white border-b border-gray-200 px-8 py-6 flex-shrink-0">
@@ -891,60 +1021,13 @@ function DashboardTab({ projects, searchQuery, setSearchQuery, onViewProject, ri
       <div className="px-8 py-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((project: Project) => (
-            <div
+            <ProjectProgressCard
               key={project.id}
-              onClick={() => onViewProject(project)}
-              className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-all cursor-pointer group"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
-                    {project.title}
-                  </h3>
-                  <p className="text-sm text-gray-500 line-clamp-2 h-10">{project.shortDescription}</p>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const confirmed = window.confirm(`Delete project "${project.title}"?`);
-                    if (confirmed) {
-                      onDeleteProject(project.id);
-                    }
-                  }}
-                  className="ml-3 inline-flex items-center px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-2 mb-4">
-                <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${statusColors[project.status].bg} ${statusColors[project.status].text}`}>
-                  {project.status.toUpperCase()}
-                </span>
-                <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full border border-gray-200">
-                  {stageLabels[project.stage]}
-                </span>
-              </div>
-
-              <div className="mb-4">
-                <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                  <span>Progress</span>
-                  <span className="font-medium text-gray-700">{project.progress}%</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-1.5">
-                  <div
-                    className="bg-gradient-to-r from-green-500 to-green-600 h-1.5 rounded-full transition-all"
-                    style={{ width: `${project.progress}%`, minWidth: project.progress > 0 ? '8px' : '0' }}
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-gray-100 flex justify-between items-center text-xs text-gray-500">
-                <span>Updated: {new Date(project.createdAt).toLocaleDateString()}</span>
-                {project.isNew && <span className="text-blue-600 font-medium">New Project</span>}
-              </div>
-            </div>
+              project={project}
+              users={users}
+              onViewProject={onViewProject}
+              onDeleteProject={onDeleteProject}
+            />
           ))}
         </div>
       </div>

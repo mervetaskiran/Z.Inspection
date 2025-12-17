@@ -161,8 +161,7 @@ export function ProjectDetail({
     if (initialChatUserId && !chatPanelOpen) {
       const user = users.find(u => u.id === initialChatUserId);
       if (user && user.id !== currentUser.id) {
-        setChatOtherUser(user);
-        setChatPanelOpen(true);
+        handleContactUser(user);
       }
     }
   }, [initialChatUserId, users, currentUser.id, chatPanelOpen]);

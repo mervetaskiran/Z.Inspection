@@ -28,6 +28,25 @@ export function TensionCard({ tension, currentUser, onVote, onCommentClick, onDe
   // Evidence sayısını hesapla (Initial evidence dahil)
   const evidenceCount = (tension as any).evidences ? (tension as any).evidences.length : 0;
 
+  // Yüzdeye göre yeşil renk hesaplama - direkt hex renk kullanarak
+  const getGreenColor = (percentage: number): string => {
+    if (percentage === 0) return '#d1fae5'; // green-100
+    if (percentage <= 25) return '#86efac'; // green-300
+    if (percentage <= 50) return '#4ade80'; // green-400
+    if (percentage <= 75) return '#22c55e'; // green-500
+    return '#16a34a'; // green-600
+  };
+
+  // Debug: Bar değerlerini kontrol et
+  console.log('Bar Debug:', {
+    agreeCount,
+    disagreeCount,
+    totalVotes,
+    agreePercentage,
+    color: getGreenColor(agreePercentage),
+    width: `${agreePercentage}%`
+  });
+
   return (
     <div className="bg-white rounded-lg border p-4 shadow-sm hover:shadow-md transition-all mb-4">
       {/* Üst Kısım: Risk Badge ve Tarih */}
@@ -73,16 +92,20 @@ export function TensionCard({ tension, currentUser, onVote, onCommentClick, onDe
       {/* Consensus Bar */}
       <div className="flex items-center space-x-2 mb-4">
         <span className="text-xs text-gray-500 font-medium">Consensus:</span>
-        <div className="flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden">
+        <div className="flex-1 h-6 bg-gray-200 rounded-full overflow-hidden" style={{ position: 'relative' }}>
           <div 
-            className={`h-full transition-all duration-500 ease-out ${
-              agreePercentage === 100 
-                ? 'bg-gradient-to-r from-green-500 to-green-600' 
-                : 'bg-green-500'
-            }`}
             style={{ 
-              width: agreePercentage === 100 ? '100%' : `${agreePercentage}%`,
-              minWidth: agreePercentage > 0 && agreePercentage < 100 ? '2px' : '0'
+              position: 'absolute',
+              top: '0',
+              left: '0',
+              width: `${agreePercentage}%`,
+              height: '100%',
+              backgroundColor: agreePercentage > 0 ? getGreenColor(agreePercentage) : 'transparent',
+              borderRadius: '9999px',
+              transition: 'width 0.5s ease-out, background-color 0.5s ease-out',
+              minWidth: agreePercentage > 0 ? '4px' : '0px',
+              zIndex: 1,
+              display: 'block'
             }}
           />
         </div>
