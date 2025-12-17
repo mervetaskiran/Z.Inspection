@@ -355,16 +355,7 @@ export function UserDashboard({
         console.error('Error marking messages as read:', error);
       }
 
-      // Notification-only items should NOT open Chats.
-      const lastMessageText = String(conversation.lastMessage || '');
-      const isNotificationOnly =
-        Boolean(conversation.isNotification) || lastMessageText.startsWith('[NOTIFICATION]');
-      if (isNotificationOnly) {
-        setShowNotifications(false);
-        return;
-      }
-
-      // Open project with chat panel for the sender (normal messages)
+      // Open project with chat panel for the sender (also for notification-only messages)
       onViewProject(project, conversation.fromUserId);
       setShowNotifications(false);
     }
@@ -592,9 +583,6 @@ export function UserDashboard({
                                       {conv.fromUserName}
                                     </div>
                                   </div>
-                                  <div className="text-xs text-gray-600 font-medium mb-1 truncate">
-                                    {conv.projectTitle}
-                                  </div>
                                   <div className="text-xs text-gray-500 line-clamp-2">
                                     {String(conv.lastMessage || '').startsWith('[NOTIFICATION]')
                                       ? String(conv.lastMessage).replace(/^\[NOTIFICATION\]\s*/, '')
@@ -768,9 +756,6 @@ export function UserDashboard({
                                 {formatTime(conv.lastMessageTime)}
                               </div>
                             </div>
-                            <p className="text-sm text-gray-600 mb-1 truncate">
-                              {project.title}
-                            </p>
                             <p className={`text-sm ${hasUnread ? 'text-gray-900 font-medium' : 'text-gray-600'} line-clamp-2`}>
                               {conv.lastMessage}
                             </p>

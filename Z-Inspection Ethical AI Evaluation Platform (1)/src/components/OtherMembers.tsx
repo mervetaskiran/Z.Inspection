@@ -418,23 +418,12 @@ const fetchConversations = async () => {
                   </div>
                   <div className="space-y-1">
                     {userProjects.length > 0 ? (
-                      userProjects.slice(0, 2).map((project) => (
-                        <div
-                          key={project.id}
-                          className="text-xs text-gray-700 bg-gray-50 px-2 py-1.5 rounded border border-gray-100 truncate"
-                        >
-                          {project.title}
-                        </div>
-                      ))
+                      <div className="text-xs text-gray-700 bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
+                        Active projects: {userProjects.length}
+                      </div>
                     ) : (
                       <div className="text-xs text-gray-400 italic">
                         No active projects assigned
-                      </div>
-                    )}
-
-                    {userProjects.length > 2 && (
-                      <div className="text-xs text-gray-500 pl-1">
-                        +{userProjects.length - 2} more...
                       </div>
                     )}
                   </div>

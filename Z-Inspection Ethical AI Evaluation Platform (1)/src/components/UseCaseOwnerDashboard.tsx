@@ -129,8 +129,18 @@ export function UseCaseOwnerDashboard({
 
   // Handle notification click
   const handleNotificationClick = async (conversation: any) => {
-    const project = projects.find(p => p.id === conversation.projectId);
-    const otherUser = users.find(u => u.id === conversation.fromUserId);
+    const project =
+      projects.find(p => p.id === conversation.projectId) ||
+      ({
+        id: conversation.projectId,
+        title: conversation.projectTitle || 'Project',
+      } as any);
+    const otherUser =
+      users.find(u => u.id === conversation.fromUserId) ||
+      ({
+        id: conversation.fromUserId,
+        name: conversation.fromUserName || 'User',
+      } as any);
     
     if (project && otherUser) {
       try {
@@ -350,11 +360,10 @@ export function UseCaseOwnerDashboard({
                                       {conv.fromUserName}
                                     </div>
                                   </div>
-                                  <div className="text-xs text-gray-600 font-medium mb-1 truncate">
-                                    {conv.projectTitle}
-                                  </div>
                                   <div className="text-xs text-gray-500 line-clamp-2">
-                                    {conv.lastMessage}
+                                    {String(conv.lastMessage || '').startsWith('[NOTIFICATION]')
+                                      ? String(conv.lastMessage).replace(/^\[NOTIFICATION\]\s*/, '')
+                                      : conv.lastMessage}
                                   </div>
                                 </div>
                                 {conv.count > 1 && (

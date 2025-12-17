@@ -13,6 +13,7 @@ interface ChatPanelProps {
   inline?: boolean;
   onDeleteConversation?: () => void;
   defaultFullscreen?: boolean;
+  showProjectTitle?: boolean;
 }
 
 export function ChatPanel({
@@ -23,7 +24,8 @@ export function ChatPanel({
   onMessageSent,
   inline = false,
   onDeleteConversation,
-  defaultFullscreen = false
+  defaultFullscreen = false,
+  showProjectTitle = false
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -345,7 +347,9 @@ export function ChatPanel({
             </div>
             <div>
               <div className="font-medium text-gray-900 text-sm">{otherUser.name}</div>
-              <div className="text-xs text-gray-500">{project.title}</div>
+              {showProjectTitle && (
+                <div className="text-xs text-gray-500">{project.title}</div>
+              )}
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -375,7 +379,7 @@ export function ChatPanel({
 
   // Layout classes
   const containerClasses = inline
-    ? `w-full h-full max-w-full bg-white border border-gray-200 flex flex-col`
+    ? `w-full max-w-full bg-white border border-gray-200 min-h-0 h-full max-h-full overflow-hidden`
     : `fixed ${isFullscreen ? 'inset-0' : 'bottom-4 right-4 w-96'} bg-white shadow-2xl z-50 border border-gray-200 rounded-lg flex flex-col min-h-0`;
   
   const fixedHeight = isFullscreen ? '100vh' : `min(600px, calc(100vh - 2rem))`;
@@ -385,7 +389,7 @@ export function ChatPanel({
       className={containerClasses}
       style={
         inline
-          ? { height: '100%', display: 'flex', flexDirection: 'column' }
+          ? { display: 'grid', gridTemplateRows: 'auto 1fr auto', minHeight: 0, height: '100%', maxHeight: '100%' }
           : (!isFullscreen ? { height: fixedHeight, display: 'flex', flexDirection: 'column', position: 'relative' } : { display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' })
       }
     >
@@ -397,7 +401,9 @@ export function ChatPanel({
           </div>
           <div>
             <div className="font-medium text-gray-900">{otherUser.name}</div>
-            <div className="text-xs text-gray-500">{project.title}</div>
+            {showProjectTitle && (
+              <div className="text-xs text-gray-500">{project.title}</div>
+            )}
           </div>
         </div>
         <div className="flex items-center space-x-2">
@@ -432,9 +438,13 @@ export function ChatPanel({
       {/* Messages (scroll area) - SINGLE CONTAINER, NORMAL FLOW */}
       <div 
         ref={messagesContainerRef}
-        className="flex-1 min-h-0 overflow-y-auto bg-gray-50"
+        className="min-h-0 max-h-full overflow-y-auto bg-gray-50 overscroll-contain touch-pan-y"
+        tabIndex={0}
+        aria-label="Chat messages"
         style={{ 
-          WebkitOverflowScrolling: 'touch'
+          WebkitOverflowScrolling: 'touch',
+          overflowY: 'auto',
+          minHeight: 0
         }}
       >
         {loading && messages.length === 0 ? (

@@ -360,8 +360,18 @@ export function AdminDashboardEnhanced({
 
   // Handle notification click - open chat panel
   const handleNotificationClick = async (conversation: any) => {
-    const project = projects.find(p => p.id === conversation.projectId);
-    const otherUser = users.find(u => u.id === conversation.fromUserId);
+    const project =
+      projects.find(p => p.id === conversation.projectId) ||
+      ({
+        id: conversation.projectId,
+        title: conversation.projectTitle || 'Project',
+      } as any);
+    const otherUser =
+      users.find(u => u.id === conversation.fromUserId) ||
+      ({
+        id: conversation.fromUserId,
+        name: conversation.fromUserName || 'User',
+      } as any);
     
     if (project && otherUser) {
       // Mark messages as read
@@ -380,16 +390,7 @@ export function AdminDashboardEnhanced({
         console.error('Error marking messages as read:', error);
       }
 
-      // Notification-only items should NOT open Chats.
-      const lastMessageText = String(conversation.lastMessage || '');
-      const isNotificationOnly =
-        Boolean(conversation.isNotification) || lastMessageText.startsWith('[NOTIFICATION]');
-      if (isNotificationOnly) {
-        setShowNotifications(false);
-        return;
-      }
-
-      // Open chat panel for normal messages
+      // Open chat panel (also for notification-only messages)
       setChatProject(project);
       setChatOtherUser(otherUser);
       setChatPanelOpen(true);
@@ -579,9 +580,6 @@ export function AdminDashboardEnhanced({
                                     {conv.fromUserName}
                                   </div>
                                 </div>
-                                <div className="text-xs text-gray-600 font-medium mb-1 truncate">
-                                  {conv.projectTitle}
-                                </div>
                                 <div className="text-xs text-gray-500 line-clamp-2">
                                   {String(conv.lastMessage || '').startsWith('[NOTIFICATION]')
                                     ? String(conv.lastMessage).replace(/^\[NOTIFICATION\]\s*/, '')
@@ -666,9 +664,6 @@ export function AdminDashboardEnhanced({
                                     {formatTime(conv.lastMessageTime)}
                                   </div>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-1 truncate">
-                                  {project.title}
-                                </p>
                                 <p className={`text-sm ${hasUnread ? 'text-gray-900 font-medium' : 'text-gray-600'} line-clamp-2`}>
                                   {conv.lastMessage}
                                 </p>

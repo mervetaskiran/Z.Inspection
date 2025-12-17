@@ -937,22 +937,25 @@ export function ProjectDetail({
           {/* Center modal */}
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
-              className="w-full max-w-3xl h-[85vh] sm:h-[80vh] bg-white shadow-2xl border border-gray-200 rounded-xl overflow-hidden"
+              className="w-full max-w-2xl bg-white shadow-2xl border border-gray-200 rounded-xl overflow-hidden flex flex-col min-h-0"
+              style={{ height: '70vh', maxHeight: 650 }}
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-modal="true"
             >
-              <ChatPanel
-                project={chatProject}
-                currentUser={currentUser}
-                otherUser={chatOtherUser}
-                inline={true}
-                onClose={closeChat}
-                onMessageSent={() => {
-                  // Trigger window event to refresh notifications in other components
-                  window.dispatchEvent(new Event('message-sent'));
-                }}
-              />
+              <div className="flex-1 min-h-0 h-full overflow-hidden">
+                <ChatPanel
+                  project={chatProject}
+                  currentUser={currentUser}
+                  otherUser={chatOtherUser}
+                  inline={true}
+                  onClose={closeChat}
+                  onMessageSent={() => {
+                    // Trigger window event to refresh notifications in other components
+                    window.dispatchEvent(new Event('message-sent'));
+                  }}
+                />
+              </div>
             </div>
           </div>
         </>

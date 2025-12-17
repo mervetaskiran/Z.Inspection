@@ -2827,29 +2827,28 @@ app.get('/api/messages/unread-count', async (req, res) => {
       return res.status(400).json({ error: 'Missing userId parameter' });
     }
     
-    // Get unread messages grouped by project and sender
+    // Get unread messages grouped by project and sender.
+    // IMPORTANT: Avoid populate() here because missing/deleted refs (project/user) can break the entire endpoint.
     const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
     const unreadMessages = await Message.find({
       toUserId: userIdObj,
       readAt: null
     })
-    .populate('projectId', 'title')
-    .populate('fromUserId', 'name email')
-    .sort({ createdAt: -1 });
-    
-    // Group by projectId and fromUserId
+      .sort({ createdAt: -1 })
+      .lean();
+
     const conversations = {};
-    unreadMessages.forEach(msg => {
-      const projectId = msg.projectId._id.toString();
-      const fromUserId = msg.fromUserId._id.toString();
+    for (const msg of unreadMessages) {
+      const projectId = String(msg.projectId);
+      const fromUserId = String(msg.fromUserId);
       const key = `${projectId}-${fromUserId}`;
-      
+
       if (!conversations[key]) {
         conversations[key] = {
-          projectId: projectId,
-          projectTitle: msg.projectId.title,
-          fromUserId: fromUserId,
-          fromUserName: msg.fromUserId.name,
+          projectId,
+          projectTitle: null, // will be filled from Project collection
+          fromUserId,
+          fromUserName: null, // will be filled from User collection
           count: 0,
           lastMessage: msg.text,
           lastMessageTime: msg.createdAt,
@@ -2857,17 +2856,41 @@ app.get('/api/messages/unread-count', async (req, res) => {
           isNotification: Boolean(msg.isNotification)
         };
       }
+
       conversations[key].count++;
-      if (msg.createdAt > conversations[key].lastMessageTime) {
+
+      // unreadMessages are sorted desc, so first seen is the latest; keep it anyway for safety.
+      if (!conversations[key].lastMessageTime || msg.createdAt > conversations[key].lastMessageTime) {
         conversations[key].lastMessage = msg.text;
         conversations[key].lastMessageTime = msg.createdAt;
         conversations[key].lastMessageId = String(msg._id);
         conversations[key].isNotification = Boolean(msg.isNotification);
       }
-    });
-    
+    }
+
     const totalCount = unreadMessages.length;
     const conversationList = Object.values(conversations);
+
+    // Hydrate titles/names (best-effort)
+    const projectIds = [...new Set(conversationList.map(c => c.projectId).filter(Boolean))]
+      .filter((id) => isValidObjectId(id));
+    const fromUserIds = [...new Set(conversationList.map(c => c.fromUserId).filter(Boolean))]
+      .filter((id) => isValidObjectId(id));
+
+    const [projects, fromUsers] = await Promise.all([
+      Project.find({ _id: { $in: projectIds } }).select('title').lean(),
+      User.find({ _id: { $in: fromUserIds } }).select('name email').lean()
+    ]);
+
+    const projectTitleById = {};
+    (projects || []).forEach(p => { projectTitleById[String(p._id)] = p.title; });
+    const userNameById = {};
+    (fromUsers || []).forEach(u => { userNameById[String(u._id)] = u.name; });
+
+    for (const c of conversationList) {
+      c.projectTitle = projectTitleById[c.projectId] || '(Unknown project)';
+      c.fromUserName = userNameById[c.fromUserId] || '(Unknown user)';
+    }
     
     res.json({
       totalCount,
