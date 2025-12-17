@@ -316,7 +316,16 @@ export function UseCaseOwnerDashboard({
                 </button>
                 
                 {showNotifications && (
-                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+                  <div
+                    className="absolute left-auto right-0 top-full mt-2 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden flex flex-col"
+                    style={{
+                      // Anchor to the bell button's right edge so it opens leftwards (prevents off-screen overflow)
+                      right: 0,
+                      width: 'min(320px, calc(100vw - 2rem))',
+                      maxWidth: 'calc(100vw - 1rem)',
+                      maxHeight: 'calc(100vh - 120px)',
+                    }}
+                  >
                     <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                       <h3 className="font-semibold text-gray-900">Notifications</h3>
                       <button
