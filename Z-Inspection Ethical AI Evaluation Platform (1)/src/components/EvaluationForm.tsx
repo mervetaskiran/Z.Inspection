@@ -19,6 +19,16 @@ interface EvaluationFormProps {
 
 type RiskLevel = 'low' | 'medium' | 'high';
 
+const QUESTION_PRINCIPLES: Array<{ value: string; label: string }> = [
+  { value: 'TRANSPARENCY', label: 'Transparency (Şeffaflık)' },
+  { value: 'HUMAN AGENCY & OVERSIGHT', label: 'Human Agency & Oversight (İnsan Özerkliği ve Gözetimi)' },
+  { value: 'TECHNICAL ROBUSTNESS & SAFETY', label: 'Technical Robustness & Safety (Teknik Sağlamlık ve Güvenlik)' },
+  { value: 'PRIVACY & DATA GOVERNANCE', label: 'Privacy & Data Governance (Gizlilik ve Veri Yönetişimi)' },
+  { value: 'DIVERSITY, NON-DISCRIMINATION & FAIRNESS', label: 'Diversity, Non-Discrimination & Fairness (Adalet)' },
+  { value: 'SOCIETAL & INTERPERSONAL WELL-BEING', label: 'Societal & Interpersonal Well-Being (Toplumsal İyi Oluş)' },
+  { value: 'ACCOUNTABILITY', label: 'Accountability (Hesap Verebilirlik)' },
+];
+
 const roleColors: Record<string, string> = {
   'admin': '#1F2937',
   'ethical-expert': '#1E40AF',
@@ -51,6 +61,7 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
   const [isDraft, setIsDraft] = useState(true);
   const [loading, setLoading] = useState(false); // Yükleniyor durumu
   const [saving, setSaving] = useState(false);   // Kaydediliyor durumu
+  const [pendingFocusQuestionId, setPendingFocusQuestionId] = useState<string | null>(null);
   const [linkedUseCase, setLinkedUseCase] = useState<UseCase | null>(null);
   const [generalRisks, setGeneralRisks] = useState<Array<{ id: string; title: string; description: string; severity?: 'low' | 'medium' | 'high' | 'critical'; relatedQuestions?: string[] }>>([]);
   const [showReviewScreen, setShowReviewScreen] = useState(false);
@@ -96,6 +107,14 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     return allQuestions.filter(q => q.stage === 'assess');
   }, [roleKey, customQuestions]);
 
+  const hasProvidedAnswer = (value: any) => {
+    if (value === undefined || value === null) return false;
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    // numbers/objects/booleans: treat as provided
+    return true;
+  };
+
   // --- 1. VERİ ÇEKME (FETCH DATA) ---
   useEffect(() => {
     const fetchEvaluation = async () => {
@@ -109,6 +128,18 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
           if (data.questionPriorities) setQuestionPriorities(data.questionPriorities); // Soru önem derecelerini yükle
           if (data.riskScores) setRiskScores(data.riskScores); // Risk skorlarını yükle
           if (data.riskLevel) setRiskLevel(data.riskLevel as RiskLevel);
+          // Custom questions (persisted)
+          if (Array.isArray(data.customQuestions)) {
+            setCustomQuestions((prev) => {
+              const others = prev.filter((q) => q.stage !== currentStage);
+              const merged = new Map<string, any>();
+              for (const q of others) merged.set(q.id, q);
+              for (const q of data.customQuestions) {
+                if (q && q.id) merged.set(q.id, q);
+              }
+              return Array.from(merged.values());
+            });
+          }
           // Genel riskleri yükle - eğer veritabanında varsa yükle
           if (data.generalRisks && Array.isArray(data.generalRisks)) {
             setGeneralRisks(data.generalRisks.map((r: any) => ({
@@ -174,6 +205,58 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
     fetchUseCase();
     fetchSetUpRisks();
   }, [currentStage, project.id, currentUser.id, project.useCase, showReviewScreen]);
+
+  // If a new question is added while on Review, jump user back to that question.
+  useEffect(() => {
+    if (!pendingFocusQuestionId) return;
+    const idx = currentQuestions.findIndex((q) => q.id === pendingFocusQuestionId);
+    if (idx >= 0) {
+      setShowReviewScreen(false);
+      setCurrentQuestionIndex(idx);
+      setPendingFocusQuestionId(null);
+    }
+  }, [pendingFocusQuestionId, currentQuestions]);
+
+  const addCustomQuestion = async (question: Question) => {
+    try {
+      const projectId = project.id || (project as any)._id;
+      const userId = currentUser.id || (currentUser as any)._id;
+      const res = await fetch(api('/api/evaluations/custom-questions'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          userId,
+          stage: question.stage,
+          question,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to save custom question');
+      }
+      const data = await res.json();
+      const saved: Question = data?.question || question;
+
+      setCustomQuestions((prev) => {
+        const map = new Map(prev.map((q) => [q.id, q] as const));
+        map.set(saved.id, saved);
+        return Array.from(map.values());
+      });
+      setPendingFocusQuestionId(saved.id);
+      setIsDraft(true);
+    } catch (e) {
+      console.error('Custom question save error:', e);
+      // Fallback: still add locally so user doesn't lose work
+      setCustomQuestions((prev) => {
+        const map = new Map(prev.map((q) => [q.id, q] as const));
+        map.set(question.id, question);
+        return Array.from(map.values());
+      });
+      setPendingFocusQuestionId(question.id);
+      setIsDraft(true);
+    }
+  };
 
   // Cevaplar ve sorular yüklendikten sonra cevaplanmamış ilk soruyu bul
   useEffect(() => {
@@ -717,6 +800,24 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
 
   // Review screen'den resolve stage'ine geçiş
   const handleFinishAssess = async () => {
+    // Enforce same validation as normal flow: all required answers + importance must be set
+    const missingRequired = assessQuestions.filter((q) => q.required && !hasProvidedAnswer(answers[q.id]));
+    const missingImportance = assessQuestions.filter((q) => !questionPriorities[q.id]);
+
+    if (missingRequired.length > 0 || missingImportance.length > 0) {
+      const first = (missingRequired[0] || missingImportance[0]) as Question | undefined;
+      const idx = first ? assessQuestions.findIndex((q) => q.id === first.id) : 0;
+      alert(
+        `Please complete all Assess questions before finishing.\n` +
+          `Missing answers: ${missingRequired.length}\n` +
+          `Missing importance: ${missingImportance.length}`
+      );
+      setShowReviewScreen(false);
+      setCurrentStage('assess');
+      setCurrentQuestionIndex(Math.max(0, idx));
+      return;
+    }
+
     const success = await saveEvaluation('completed');
     if (success) {
       setShowReviewScreen(false);
@@ -744,13 +845,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
         alert('Evaluation submitted successfully and Project Status updated!');
         onSubmit();
     }
-  };
-
-  const addCustomQuestion = (question: Question) => {
-    setCustomQuestions((prev) => [
-      ...prev,
-      { ...question, stage: currentStage }
-    ]);
   };
 
   const getCompletionPercentage = () => {
@@ -1693,6 +1787,7 @@ function AddQuestionModal({ currentStage, onClose, onAdd }: AddQuestionModalProp
   const [type, setType] = useState<QuestionType>('text');
   const [options, setOptions] = useState<string[]>(['Option 1', 'Option 2']);
   const [required, setRequired] = useState(true);
+  const [principle, setPrinciple] = useState<string>(QUESTION_PRINCIPLES[0]?.value || 'TRANSPARENCY');
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -1702,6 +1797,7 @@ function AddQuestionModal({ currentStage, onClose, onAdd }: AddQuestionModalProp
       text,
       description: description || undefined,
       type,
+      principle: principle || undefined,
       required,
       options: (type === 'multiple-choice' || type === 'select' || type === 'radio' || type === 'checkbox') 
         ? options.filter(o => o.trim() !== '') 
@@ -1752,6 +1848,23 @@ function AddQuestionModal({ currentStage, onClose, onAdd }: AddQuestionModalProp
               placeholder="e.g., Does the system have a rollback mechanism?"
               required
             />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Principle (İlke) <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={principle}
+              onChange={(e) => setPrinciple(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none bg-white"
+              required
+            >
+              {QUESTION_PRINCIPLES.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2">Description / Rationale <span className="text-gray-400 font-normal">(Optional)</span></label>

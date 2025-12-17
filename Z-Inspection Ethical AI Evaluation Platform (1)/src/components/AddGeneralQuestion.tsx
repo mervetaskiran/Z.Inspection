@@ -10,22 +10,34 @@ interface AddGeneralQuestionProps {
   onComplete: () => void;
 }
 
+const QUESTION_PRINCIPLES: Array<{ value: string; label: string }> = [
+  { value: 'TRANSPARENCY', label: 'Transparency (Şeffaflık)' },
+  { value: 'HUMAN AGENCY & OVERSIGHT', label: 'Human Agency & Oversight (İnsan Özerkliği ve Gözetimi)' },
+  { value: 'TECHNICAL ROBUSTNESS & SAFETY', label: 'Technical Robustness & Safety (Teknik Sağlamlık ve Güvenlik)' },
+  { value: 'PRIVACY & DATA GOVERNANCE', label: 'Privacy & Data Governance (Gizlilik ve Veri Yönetişimi)' },
+  { value: 'DIVERSITY, NON-DISCRIMINATION & FAIRNESS', label: 'Diversity, Non-Discrimination & Fairness (Adalet)' },
+  { value: 'SOCIETAL & INTERPERSONAL WELL-BEING', label: 'Societal & Interpersonal Well-Being (Toplumsal İyi Oluş)' },
+  { value: 'ACCOUNTABILITY', label: 'Accountability (Hesap Verebilirlik)' },
+];
+
 export function AddGeneralQuestion({ project, currentUser, onBack, onComplete }: AddGeneralQuestionProps) {
   const [customQuestions, setCustomQuestions] = useState<Question[]>([]);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const [text, setText] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<QuestionType>('text');
   const [options, setOptions] = useState<string[]>(['Option 1', 'Option 2']);
   const [required, setRequired] = useState(true);
+  const [principle, setPrinciple] = useState<string>(QUESTION_PRINCIPLES[0]?.value || 'TRANSPARENCY');
 
   const handleAddQuestion = () => {
     setShowAddQuestion(true);
   };
 
-  const handleSubmitQuestion = (e: FormEvent) => {
+  const handleSubmitQuestion = async (e: FormEvent) => {
     e.preventDefault();
     const newQuestion: Question = {
       id: `custom_gen_${Date.now()}`,
@@ -33,6 +45,7 @@ export function AddGeneralQuestion({ project, currentUser, onBack, onComplete }:
       text,
       description: description || undefined,
       type,
+      principle: principle || undefined,
       required,
       options: (type === 'multiple-choice' || type === 'select' || type === 'radio' || type === 'checkbox')
         ? options.filter(o => o.trim() !== '')
@@ -40,13 +53,38 @@ export function AddGeneralQuestion({ project, currentUser, onBack, onComplete }:
       min: type === 'likert' ? 1 : undefined,
       max: type === 'likert' ? 5 : undefined,
     };
-    setCustomQuestions(prev => [...prev, newQuestion]);
+
+    // Persist to Mongo (best-effort). If it fails, keep it locally to avoid data loss.
+    setCreating(true);
+    try {
+      const projectId = project.id || (project as any)._id;
+      const userId = currentUser.id || (currentUser as any)._id;
+      const res = await fetch(api('/api/evaluations/custom-questions'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, userId, stage: 'assess', question: newQuestion }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const saved: Question = data?.question || newQuestion;
+        setCustomQuestions(prev => [...prev, saved]);
+      } else {
+        setCustomQuestions(prev => [...prev, newQuestion]);
+      }
+    } catch (err) {
+      console.error('Failed to persist custom question:', err);
+      setCustomQuestions(prev => [...prev, newQuestion]);
+    } finally {
+      setCreating(false);
+    }
+
     // Reset form
     setText('');
     setDescription('');
     setType('text');
     setOptions(['Option 1', 'Option 2']);
     setRequired(true);
+    setPrinciple(QUESTION_PRINCIPLES[0]?.value || 'TRANSPARENCY');
     setShowAddQuestion(false);
   };
 
@@ -182,6 +220,23 @@ export function AddGeneralQuestion({ project, currentUser, onBack, onComplete }:
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Principle (İlke) <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={principle}
+                      onChange={(e) => setPrinciple(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                      required
+                    >
+                      {QUESTION_PRINCIPLES.map((p) => (
+                        <option key={p.value} value={p.value}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
                       Description (Optional)
                     </label>
                     <textarea
@@ -268,9 +323,10 @@ export function AddGeneralQuestion({ project, currentUser, onBack, onComplete }:
                     </button>
                     <button
                       type="submit"
+                      disabled={creating}
                       className="px-6 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-all"
                     >
-                      Add Question
+                      {creating ? 'Saving...' : 'Add Question'}
                     </button>
                   </div>
                 </form>

@@ -161,6 +161,19 @@ const EvaluationSchema = new mongoose.Schema({
   answers: { type: Map, of: mongoose.Schema.Types.Mixed },
   questionPriorities: { type: Map, of: String }, // Her soru için önem derecesi (low/medium/high)
   riskLevel: { type: String, default: 'medium' },
+  customQuestions: [{ // Kullanıcının bu stage'e eklediği custom sorular (Mongo'ya kaydedilir)
+    id: { type: String, required: true },
+    text: { type: String, required: true },
+    description: { type: String },
+    type: { type: String, required: true },
+    stage: { type: String, required: true },
+    principle: { type: String },
+    required: { type: Boolean, default: true },
+    options: { type: [String], default: [] },
+    min: { type: Number },
+    max: { type: Number },
+    createdAt: { type: Date, default: Date.now }
+  }],
   generalRisks: [{ // Genel riskler - her proje için ayrı ayrı kaydedilir
     id: String,
     title: String,
@@ -873,18 +886,23 @@ app.post('/api/evaluations', async (req, res) => {
       : userId;
     
     // Save to old Evaluation collection (for backward compatibility)
+    // IMPORTANT: Use $set to avoid wiping fields like customQuestions on subsequent saves
     const evaluation = await Evaluation.findOneAndUpdate(
       { projectId: projectIdObj, userId: userIdObj, stage },
-      { 
-        projectId: projectIdObj,
-        userId: userIdObj,
-        stage,
-        answers: answers || {}, 
-        questionPriorities: questionPriorities || {}, 
-        riskLevel: riskLevel || 'medium', 
-        generalRisks: generalRisks || [], 
-        status: status || 'draft', 
-        updatedAt: new Date() 
+      {
+        $setOnInsert: {
+          projectId: projectIdObj,
+          userId: userIdObj,
+          stage
+        },
+        $set: {
+          answers: answers || {},
+          questionPriorities: questionPriorities || {},
+          riskLevel: riskLevel || 'medium',
+          generalRisks: generalRisks || [],
+          status: status || 'draft',
+          updatedAt: new Date()
+        }
       },
       { new: true, upsert: true }
     );
@@ -1359,8 +1377,68 @@ app.get('/api/evaluations', async (req, res) => {
   try {
     const { projectId, userId, stage } = req.query;
     const evaluation = await Evaluation.findOne({ projectId, userId, stage });
-    res.json(evaluation || { answers: {}, riskLevel: 'medium' });
+    res.json(evaluation || { answers: {}, riskLevel: 'medium', customQuestions: [] });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add a custom question to an evaluation stage (persist to MongoDB)
+app.post('/api/evaluations/custom-questions', async (req, res) => {
+  try {
+    const { projectId, userId, stage, question } = req.body || {};
+    if (!projectId || !userId || !stage) {
+      return res.status(400).json({ error: 'projectId, userId, stage are required' });
+    }
+    if (!question || !question.text || !question.type) {
+      return res.status(400).json({ error: 'question.text and question.type are required' });
+    }
+
+    const projectIdObj = isValidObjectId(projectId)
+      ? new mongoose.Types.ObjectId(projectId)
+      : projectId;
+    const userIdObj = isValidObjectId(userId)
+      ? new mongoose.Types.ObjectId(userId)
+      : userId;
+
+    const id = question.id && typeof question.id === 'string' ? question.id : `custom_${Date.now()}`;
+    const doc = {
+      id,
+      text: String(question.text),
+      description: question.description ? String(question.description) : undefined,
+      type: String(question.type),
+      stage: String(question.stage || stage),
+      principle: question.principle ? String(question.principle) : undefined,
+      required: question.required !== false,
+      options: Array.isArray(question.options) ? question.options.map((o) => String(o)) : [],
+      min: typeof question.min === 'number' ? question.min : undefined,
+      max: typeof question.max === 'number' ? question.max : undefined,
+      createdAt: new Date()
+    };
+
+    await Evaluation.findOneAndUpdate(
+      { projectId: projectIdObj, userId: userIdObj, stage: String(stage) },
+      {
+        $setOnInsert: {
+          projectId: projectIdObj,
+          userId: userIdObj,
+          stage: String(stage),
+          answers: {},
+          questionPriorities: {},
+          riskLevel: 'medium',
+          generalRisks: [],
+          status: 'draft',
+          updatedAt: new Date()
+        },
+        $push: { customQuestions: doc },
+        $set: { updatedAt: new Date() }
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({ success: true, question: doc });
+  } catch (err) {
+    console.error('❌ Error in /api/evaluations/custom-questions:', err);
     res.status(500).json({ error: err.message });
   }
 });

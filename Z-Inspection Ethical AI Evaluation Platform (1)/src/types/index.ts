@@ -17,6 +17,7 @@ export interface Question {
   text: string;
   stage: StageKey;
   type: QuestionType;
+  principle?: string; // Optional ethical principle/category for custom questions
   required?: boolean;
   options?: QuestionOption[];
   description?: string;
