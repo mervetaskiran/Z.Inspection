@@ -50,11 +50,7 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
   const [loading, setLoading] = useState(true);
   const [generalQuestions, setGeneralQuestions] = useState<GeneralQuestion[]>([]);
   const [completionPercentage, setCompletionPercentage] = useState(0);
-<<<<<<< HEAD
-  const [showQuestionNav, setShowQuestionNav] = useState(false);
-=======
   const [sidebarOpen, setSidebarOpen] = useState(true);
->>>>>>> d514f3d (education soruları ekledni, admin dashboard düzeltildi, chat görüntüsü iyileştirildi)
 
   // Convert backend question format to frontend format
   const convertQuestion = (q: any): GeneralQuestion => {
@@ -557,79 +553,6 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
         </div>
       </div>
 
-<<<<<<< HEAD
-      <div className="flex-1 px-4 py-8 max-w-5xl mx-auto w-full flex flex-col">
-        <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
-          {/* Mobile: question list drawer */}
-          {showQuestionNav && (
-            <div className="fixed inset-0 z-50 md:hidden">
-              <div className="absolute inset-0 bg-black/30" onClick={() => setShowQuestionNav(false)} />
-              <div className="absolute left-0 top-0 bottom-0 w-72 max-w-[80vw] bg-white shadow-2xl border-r border-gray-200 flex flex-col">
-                <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                  <div className="font-semibold text-gray-900">Questions</div>
-                  <button
-                    type="button"
-                    className="p-2 rounded-lg hover:bg-gray-100"
-                    onClick={() => setShowQuestionNav(false)}
-                    aria-label="Close questions"
-                  >
-                    <X className="w-5 h-5 text-gray-600" />
-                  </button>
-                </div>
-                <div className="p-3 overflow-y-auto">
-                  <div className="space-y-1">
-                    {generalQuestions.map((q, idx) => {
-                      const active = idx === currentQuestionIndex;
-                      const done = isQuestionAnswered(q);
-                      return (
-                        <button
-                          key={q.id || idx}
-                          type="button"
-                          onClick={() => {
-                            setCurrentQuestionIndex(idx);
-                            setShowQuestionNav(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-                            active
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                              : 'text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <span className="font-medium">Q{idx + 1}</span>
-                          {done && <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Desktop: left question list */}
-          <div className="hidden md:block md:w-56 lg:w-64 shrink-0">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 md:sticky md:top-28 max-h-[70vh] overflow-y-auto">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-2 pb-2">
-                Questions
-              </div>
-              <div className="space-y-1">
-                {generalQuestions.map((q, idx) => {
-                  const active = idx === currentQuestionIndex;
-                  const done = isQuestionAnswered(q);
-                  return (
-                    <button
-                      key={q.id || idx}
-                      type="button"
-                      onClick={() => setCurrentQuestionIndex(idx)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-                        active
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className="font-medium">Q{idx + 1}</span>
-                      {done && <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />}
-=======
       <div className="flex-1 flex overflow-hidden">
         {/* Questions Sidebar */}
         {sidebarOpen && (
@@ -685,18 +608,12 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                       }`}>
                         {q.questionEn.substring(0, 40)}...
                       </p>
->>>>>>> d514f3d (education soruları ekledni, admin dashboard düzeltildi, chat görüntüsü iyileştirildi)
                     </button>
                   );
                 })}
               </div>
             </div>
           </div>
-<<<<<<< HEAD
-
-          {/* Question Card */}
-          <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1 min-h-0">
-=======
         )}
 
         {/* Show sidebar toggle button when closed */}
@@ -710,18 +627,17 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
           </button>
         )}
 
-      <div className="flex-1 px-4 py-8 max-w-5xl mx-auto w-full flex flex-col overflow-y-auto">
-        {/* Question Card */}
-        <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1">
->>>>>>> d514f3d (education soruları ekledni, admin dashboard düzeltildi, chat görüntüsü iyileştirildi)
+        <div className="flex-1 px-4 py-8 max-w-5xl mx-auto w-full flex flex-col overflow-y-auto">
+          {/* Question Card */}
+          <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1">
             <div className="p-8 border-b border-gray-100 bg-white">
-            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="flex flex-wrap items-center gap-3 mb-4">
               <span className="px-3 py-1 bg-blue-100 text-blue-600 text-sm font-medium rounded-full">
                 Question {currentQuestionIndex + 1} of {generalQuestions.length}
               </span>
               <button
                 type="button"
-                onClick={() => setShowQuestionNav(true)}
+                onClick={() => setSidebarOpen(true)}
                 className="md:hidden px-3 py-1 bg-blue-50 text-blue-700 text-sm font-medium rounded-full border border-blue-100 hover:bg-blue-100"
               >
                 Q list
@@ -935,7 +851,6 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
             </div>
           </div>
         </div>
-      </div>
 
         {/* Navigation Footer */}
         <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 mt-8 flex justify-between items-center z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">

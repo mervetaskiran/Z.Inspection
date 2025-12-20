@@ -13,11 +13,6 @@ if (!MONGO_URI) {
   throw new Error('❌ MONGO_URI environment variable bulunamadı!');
 }
 
-mongoose.connect(MONGO_URI).catch((err) => {
-  console.error('❌ MongoDB bağlantısı başarısız:', err);
-  process.exit(1);
-});
-
 const Questionnaire = require('../models/questionnaire');
 const Question = require('../models/question');
 
@@ -458,6 +453,14 @@ const educationExpertQuestions = [
 
 async function seedEducationExpertQuestions() {
   try {
+    // Connect to MongoDB and wait for connection
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(MONGO_URI);
+      console.log('✅ MongoDB bağlantısı başarılı');
+    } else if (mongoose.connection.readyState === 1) {
+      console.log('✅ MongoDB zaten bağlı');
+    }
+    
     console.log('Starting education expert questions seeding...');
 
     // Use education-expert-v1 questionnaire
@@ -553,4 +556,5 @@ async function seedEducationExpertQuestions() {
 }
 
 seedEducationExpertQuestions();
+
 
