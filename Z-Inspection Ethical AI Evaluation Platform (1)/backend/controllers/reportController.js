@@ -34,7 +34,33 @@ async function collectAnalysisData(projectId) {
       throw new Error('Project not found');
     }
 
-    // Get all scores
+    // Ensure all scores are computed before generating report
+    // This ensures medical and education scores are included
+    const Response = require('../models/response');
+    const { computeScores } = require('../services/evaluationService');
+    
+    // Get all unique userId/questionnaireKey combinations for this project
+    const responses = await Response.find({ 
+      projectId: projectIdObj,
+      status: { $in: ['draft', 'submitted'] }
+    }).select('userId questionnaireKey').lean();
+    
+    const uniqueCombinations = new Set();
+    responses.forEach(r => {
+      uniqueCombinations.add(`${r.userId}_${r.questionnaireKey}`);
+    });
+    
+    // Compute scores for all combinations (if not already computed or outdated)
+    for (const combo of uniqueCombinations) {
+      const [userId, questionnaireKey] = combo.split('_');
+      try {
+        await computeScores(projectIdObj, userId, questionnaireKey);
+      } catch (error) {
+        console.warn(`⚠️ Could not compute scores for ${userId}/${questionnaireKey}:`, error.message);
+      }
+    }
+
+    // Get all scores (now including newly computed ones)
     const scores = await Score.find({ projectId: projectIdObj }).lean();
 
     // Get general questions answers

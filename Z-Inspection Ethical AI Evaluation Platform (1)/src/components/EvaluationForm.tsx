@@ -47,21 +47,24 @@ const riskSeverityOptions = [
 ];
 
 const getScoreClasses = (value: number, selected: number | null | undefined) => {
-  const isSelected = typeof selected === 'number' && selected === value;
+  // Explicitly check if selected is a number (including 0) and equals value
+  // This handles 0 and 1 correctly - use same logic as GeneralQuestions
+  const isSelected = selected !== null && selected !== undefined && typeof selected === 'number' && selected === value;
 
   if (!isSelected) {
     return 'border-gray-200 bg-white hover:bg-gray-50';
   }
 
+  // Use same color scheme as GeneralQuestions for consistency
   switch (value) {
     case 4:
-      return 'border-green-500 bg-green-200 shadow-md';
+      return 'border-green-500 bg-green-50 shadow-md';
     case 3:
-      return 'border-lime-500 bg-lime-200 shadow-md';
+      return 'border-blue-500 bg-blue-50 shadow-md';
     case 2:
-      return 'border-yellow-500 bg-yellow-200 shadow-md';
+      return 'border-yellow-500 bg-yellow-50 shadow-md';
     case 1:
-      return 'border-orange-500 bg-orange-300 shadow-md';
+      return 'border-orange-500 bg-orange-200 shadow-md';
     case 0:
       return 'border-red-500 bg-red-200 shadow-md';
     default:
@@ -70,14 +73,6 @@ const getScoreClasses = (value: number, selected: number | null | undefined) => 
 };
 
 export function EvaluationForm({ project, currentUser, onBack, onSubmit }: EvaluationFormProps) {
-  // Log component mount
-  console.log('🟢 EvaluationForm component RENDERED:', { 
-    projectId: project?.id || (project as any)?._id, 
-    userId: currentUser?.id || (currentUser as any)?._id,
-    hasProject: !!project,
-    hasUser: !!currentUser
-  });
-  
   // Projenin mevcut stage'ini başlangıç değeri olarak alabiliriz veya 'set-up' ile başlatabiliriz.
   // Ancak kullanıcının kaldığı yerden devam etmesi için 'set-up' ile başlatıp veriyi çekmek daha güvenli.
   const [currentStage, setCurrentStage] = useState<StageKey>('set-up');
@@ -264,35 +259,31 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
       projectId: project?.id || (project as any)?._id,
       userId: currentUser?.id || (currentUser as any)?._id,
       hasProject: !!project,
-      hasUser: !!currentUser,
-      projectObject: project,
-      currentUserObject: currentUser
+      hasUser: !!currentUser
     });
     
-    // Early return checks with detailed logging
+    // Check conditions
     if (resumeInitializedRef.current) {
       console.log('⏭️ Resume logic skipped: already initialized');
       return;
     }
     
     if (!isInitialLoad) {
-      console.log('⏭️ Resume logic skipped: isInitialLoad is false', { isInitialLoad });
+      console.log('⏭️ Resume logic skipped: isInitialLoad is false');
       return;
     }
     
-    const projectId = project?.id || (project as any)?._id;
-    if (!project || !projectId) {
-      console.log('⏭️ Resume logic skipped: project is missing or has no id', { project, projectId });
+    if (!project || (!project.id && !(project as any)._id)) {
+      console.log('⏭️ Resume logic skipped: project is missing or has no id');
       return;
     }
     
-    const userId = currentUser?.id || (currentUser as any)?._id;
-    if (!currentUser || !userId) {
-      console.log('⏭️ Resume logic skipped: currentUser is missing or has no id', { currentUser, userId });
+    if (!currentUser || (!currentUser.id && !(currentUser as any)._id)) {
+      console.log('⏭️ Resume logic skipped: currentUser is missing or has no id');
       return;
     }
     
-    console.log('🚀 Starting resume logic...', { projectId, userId });
+    console.log('🚀 Starting resume logic...');
     const resumeEvaluation = async () => {
       try {
         setLoading(true);
@@ -579,15 +570,6 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
           setCurrentStage(resumeStage);
           // Keep resumeQuestionCode so useEffect can find the index
           // useEffect will clear it after using
-          
-          // Also set the index directly if we have it
-          if (finalResumeIndex !== undefined && finalResumeIndex >= 0) {
-            console.log(`🎯 Setting currentQuestionIndex directly to ${finalResumeIndex}`);
-            // Use setTimeout to ensure state updates are processed
-            setTimeout(() => {
-              setCurrentQuestionIndex(finalResumeIndex);
-            }, 200);
-          }
         }
         
         setHasLoadedResponses(true);
@@ -603,10 +585,8 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
       }
     };
     
-    // Call resumeEvaluation immediately
     resumeEvaluation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run ONLY on mount - we check project/user inside
+  }, [project, currentUser]); // Use full objects to ensure useEffect runs when component mounts
 
   // --- 1. VERİ ÇEKME (FETCH DATA) ---
   useEffect(() => {
@@ -2286,28 +2266,137 @@ export function EvaluationForm({ project, currentUser, onBack, onSubmit }: Evalu
                         </div>
 
                         {/* Risk Score Selection (0-4) */}
-                        <div className="mt-8 pt-6 border-t border-gray-200">
+                        <div className="mt-8 pt-6 border-t border-gray-200" key={`risk-scores-${activeQuestion.id}-${riskScores[activeQuestion.id] || riskScores[activeQuestion.code || ''] || 'none'}`}>
                             <div className="flex items-center gap-2 mb-4">
                                 <h3 className="text-lg font-semibold text-gray-900">Risk Score for This Question</h3>
                                 <span className="px-2.5 py-0.5 bg-red-50 text-red-600 text-xs font-medium rounded-full border border-red-100">
                                     Required
                                 </span>
                             </div>
-                            <div className="flex gap-2 justify-center">
-                                {[4, 3, 2, 1, 0].map((value) => {
-                                    const current = riskScores[activeQuestion.id];
+                            <div className="grid grid-cols-5 gap-3 max-w-4xl">
+                                {([
+                                    { value: 4, label: 'Excellent', labelTr: 'Mükemmel', desc: 'Clear understanding, high confidence', color: 'green' },
+                                    { value: 3, label: 'Good', labelTr: 'İyi', desc: 'Minor gaps but generally appropriate', color: 'blue' },
+                                    { value: 2, label: 'Moderate', labelTr: 'Orta', desc: 'Basic awareness, notable gaps', color: 'yellow' },
+                                    { value: 1, label: 'Poor', labelTr: 'Zayıf', desc: 'Significant misunderstanding, low confidence', color: 'orange' },
+                                    { value: 0, label: 'Unacceptable', labelTr: 'Kabul Edilemez', desc: 'No awareness, serious risk', color: 'red' }
+                                ] as const).map(({ value, label, labelTr, desc, color }) => {
+                                    // Get question key (prefer code over id, same as GeneralQuestions)
+                                    const questionKey = activeQuestion.code || activeQuestion.id;
+                                    
+                                    // Get risk value - check all possible keys (EXACT same logic as GeneralQuestions)
+                                    let riskValue: number | undefined = undefined;
+                                    
+                                    // Check all possible keys - handle 0 and 1 correctly (EXACT same order as GeneralQuestions)
+                                    if (activeQuestion.id !== undefined) {
+                                        const idVal = riskScores[activeQuestion.id];
+                                        if (idVal !== undefined && idVal !== null && typeof idVal === 'number' && idVal >= 0 && idVal <= 4) {
+                                            riskValue = idVal;
+                                        }
+                                    }
+                                    
+                                    if (riskValue === undefined) {
+                                        const keyVal = riskScores[questionKey];
+                                        if (keyVal !== undefined && keyVal !== null && typeof keyVal === 'number' && keyVal >= 0 && keyVal <= 4) {
+                                            riskValue = keyVal;
+                                        }
+                                    }
+                                    
+                                    if (riskValue === undefined && activeQuestion.code !== undefined) {
+                                        const codeVal = riskScores[activeQuestion.code];
+                                        if (codeVal !== undefined && codeVal !== null && typeof codeVal === 'number' && codeVal >= 0 && codeVal <= 4) {
+                                            riskValue = codeVal;
+                                        }
+                                    }
+                                    
+                                    // Use explicit type check and equality (EXACT same as GeneralQuestions)
+                                    // Force strict comparison to handle 0 and 1 correctly
+                                    const isSelected = riskValue !== undefined && riskValue !== null && typeof riskValue === 'number' && riskValue === value;
+                                    
+                                    // Debug log for selected state
+                                    if ((value === 0 || value === 1) && isSelected) {
+                                        console.log(`✅ EvaluationForm: Button ${value} is selected`, {
+                                            riskValue,
+                                            value,
+                                            isSelected,
+                                            questionKey,
+                                            questionId: activeQuestion.id,
+                                            riskScoresCheck: {
+                                                [questionKey]: riskScores[questionKey],
+                                                [activeQuestion.id || '']: riskScores[activeQuestion.id || ''],
+                                                [activeQuestion.code || '']: riskScores[activeQuestion.code || '']
+                                            }
+                                        });
+                                    }
+                                    
+                                    const colorClasses = {
+                                        green: isSelected ? 'border-green-500 bg-green-50 shadow-md' : 'border-gray-200 hover:border-green-300 hover:bg-green-50/30',
+                                        blue: isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/30',
+                                        yellow: isSelected ? 'border-yellow-500 bg-yellow-50 shadow-md' : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50/30',
+                                        orange: isSelected ? 'border-orange-500 bg-orange-200 shadow-md' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50',
+                                        red: isSelected ? 'border-red-500 bg-red-200 shadow-md' : 'border-gray-200 hover:border-red-300 hover:bg-red-50'
+                                    };
+                                    const bgColorClasses = {
+                                        green: isSelected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400',
+                                        blue: isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400',
+                                        yellow: isSelected ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400',
+                                        orange: isSelected ? 'bg-orange-200 text-orange-800' : 'bg-gray-100 text-gray-400',
+                                        red: isSelected ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'
+                                    };
+                                    
                                     return (
-                                        <button
+                                        <label
                                             key={value}
-                                            type="button"
-                                            onClick={() => {
-                                                setRiskScores((prev) => ({ ...prev, [activeQuestion.id]: value as 0 | 1 | 2 | 3 | 4 }));
-                                                setIsDraft(true);
-                                            }}
-                                            className={`w-12 h-12 rounded-lg border text-lg font-semibold transition ${getScoreClasses(value, current)}`}
+                                            className={`relative flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${colorClasses[color]}`}
                                         >
-                                            {value}
-                                        </button>
+                                            <input
+                                                type="radio"
+                                                name={`risk-${activeQuestion.id}`}
+                                                value={value}
+                                                checked={isSelected}
+                                                onChange={() => {
+                                                    const questionKey = activeQuestion.code || activeQuestion.id;
+                                                    const riskValueToSet = value as 0 | 1 | 2 | 3 | 4;
+                                                    console.log(`🔵 Setting risk for question ${questionKey} to ${riskValueToSet}`, {
+                                                        questionKey,
+                                                        questionId: activeQuestion.id,
+                                                        questionCode: activeQuestion.code,
+                                                        riskValueToSet,
+                                                        value,
+                                                        currentRiskScores: riskScores
+                                                    });
+                                                    // Update state directly (EXACT same as GeneralQuestions)
+                                                    // Use functional update to ensure state is properly updated
+                                                    setRiskScores((prev) => {
+                                                        const updated = { ...prev };
+                                                        // Update all possible keys to ensure consistency
+                                                        updated[questionKey] = riskValueToSet;
+                                                        if (activeQuestion.id) {
+                                                            updated[activeQuestion.id] = riskValueToSet;
+                                                        }
+                                                        if (activeQuestion.code) {
+                                                            updated[activeQuestion.code] = riskValueToSet;
+                                                        }
+                                                        if ((activeQuestion as any)._id) {
+                                                            updated[(activeQuestion as any)._id] = riskValueToSet;
+                                                        }
+                                                        console.log('✅ Updated riskScores state:', updated);
+                                                        // Return new object to force re-render
+                                                        return { ...updated };
+                                                    });
+                                                    setIsDraft(true);
+                                                }}
+                                                className="hidden"
+                                            />
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors ${bgColorClasses[color]}`}>
+                                                <span className="text-lg font-bold">{value}</span>
+                                            </div>
+                                            <span className={`text-xs font-bold text-center ${isSelected ? 'text-gray-900' : 'text-gray-500'}`}>
+                                                {label}
+                                            </span>
+                                            <span className={`text-xs text-center mt-1 ${isSelected ? 'text-gray-700' : 'text-gray-500'}`}>{labelTr}</span>
+                                            <span className={`text-xs text-center mt-1 leading-tight ${isSelected ? 'text-gray-600' : 'text-gray-400'}`}>{desc}</span>
+                                        </label>
                                     );
                                 })}
                             </div>

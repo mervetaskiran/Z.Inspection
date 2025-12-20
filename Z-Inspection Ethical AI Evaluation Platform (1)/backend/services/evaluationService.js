@@ -311,7 +311,7 @@ async function computeScores(projectId, userId = null, questionnaireKey = null) 
       projectId: isValidObjectId(projectId) 
         ? new mongoose.Types.ObjectId(projectId) 
         : projectId,
-      status: 'submitted'
+      status: { $in: ['draft', 'submitted'] } // Include both draft and submitted responses
     };
 
     if (userId) {

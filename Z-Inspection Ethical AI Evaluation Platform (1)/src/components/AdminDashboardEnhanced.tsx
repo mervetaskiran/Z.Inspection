@@ -152,6 +152,7 @@ export function AdminDashboardEnhanced({
   const [chatProject, setChatProject] = useState<Project | null>(null);
   const [allConversations, setAllConversations] = useState<any[]>([]);
   const [showProfile, setShowProfile] = useState(false);
+  const [projectScores, setProjectScores] = useState<Record<string, number>>({});
 
   // Fetch all conversations (chats)
   const fetchConversations = async () => {
@@ -307,8 +308,13 @@ export function AdminDashboardEnhanced({
       if (response.ok) {
         const data = await response.json();
         console.log('Admin unread count fetched:', data);
-        setUnreadCount(data.totalCount || 0);
-        setUnreadConversations(data.conversations || []);
+        const conversations = data.conversations || [];
+        // Calculate actual unread count from conversations to ensure consistency
+        // Backend uses 'count' field, not 'unreadCount'
+        const actualUnreadCount = conversations.reduce((sum: number, conv: any) => sum + (conv.count || conv.unreadCount || 0), 0);
+        // Only show badge if there are actual conversations with unread messages
+        setUnreadCount(actualUnreadCount);
+        setUnreadConversations(conversations);
       } else {
         console.error('Admin failed to fetch unread count:', response.status, response.statusText);
       }
@@ -403,11 +409,95 @@ export function AdminDashboardEnhanced({
     p.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Fetch project scores for risk distribution
+  useEffect(() => {
+    const fetchProjectScores = async () => {
+      try {
+        const scoresMap: Record<string, number> = {};
+        
+        // Fetch scores for all projects
+        for (const project of projects) {
+          const projectId = project.id || (project as any)._id;
+          if (!projectId) continue;
+          
+          try {
+            const response = await fetch(api(`/api/scores?projectId=${encodeURIComponent(projectId)}`));
+            if (response.ok) {
+              const scores = await response.json();
+              if (Array.isArray(scores) && scores.length > 0) {
+                // Calculate average of all scores for this project
+                const avgScores = scores
+                  .map((s: any) => s.totals?.avg)
+                  .filter((avg: any) => avg !== undefined && avg !== null && typeof avg === 'number');
+                
+                if (avgScores.length > 0) {
+                  const projectAvg = avgScores.reduce((a: number, b: number) => a + b, 0) / avgScores.length;
+                  scoresMap[projectId] = projectAvg;
+                }
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching scores for project ${projectId}:`, error);
+          }
+        }
+        
+        setProjectScores(scoresMap);
+      } catch (error) {
+        console.error('Error fetching project scores:', error);
+      }
+    };
+
+    if (projects.length > 0) {
+      fetchProjectScores();
+    }
+  }, [projects]);
+
+  // Calculate risk levels based on scores
+  const calculateRiskLevel = (avgScore: number | undefined): 'Critical' | 'High' | 'Medium' | 'Low' => {
+    if (avgScore === undefined || avgScore === null) return 'Medium'; // Default for projects without scores
+    
+    // Score range: 0-4 (0 = highest risk, 4 = lowest risk)
+    if (avgScore <= 0.5) return 'Critical';
+    if (avgScore <= 1.5) return 'High';
+    if (avgScore <= 2.5) return 'Medium';
+    return 'Low';
+  };
+
+  // Calculate risk distribution
+  const riskDistribution = projects.reduce((acc, project) => {
+    const projectId = project.id || (project as any)._id;
+    const avgScore = projectScores[projectId];
+    const riskLevel = calculateRiskLevel(avgScore);
+    acc[riskLevel] = (acc[riskLevel] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const totalProjects = projects.length;
   const riskLevels = [
-    { level: 'Critical', count: projects.filter(p => p.status === 'disproven').length, color: 'bg-red-500', percentage: 15 },
-    { level: 'High', count: 5, color: 'bg-orange-500', percentage: 35 },
-    { level: 'Medium', count: projects.filter(p => p.status === 'ongoing').length, color: 'bg-yellow-500', percentage: 50 },
-    { level: 'Low', count: projects.filter(p => p.status === 'proven').length, color: 'bg-green-500', percentage: 80 }
+    { 
+      level: 'Critical', 
+      count: riskDistribution['Critical'] || 0, 
+      color: 'bg-red-500', 
+      percentage: totalProjects > 0 ? Math.round((riskDistribution['Critical'] || 0) / totalProjects * 100) : 0 
+    },
+    { 
+      level: 'High', 
+      count: riskDistribution['High'] || 0, 
+      color: 'bg-orange-500', 
+      percentage: totalProjects > 0 ? Math.round((riskDistribution['High'] || 0) / totalProjects * 100) : 0 
+    },
+    { 
+      level: 'Medium', 
+      count: riskDistribution['Medium'] || 0, 
+      color: 'bg-yellow-500', 
+      percentage: totalProjects > 0 ? Math.round((riskDistribution['Medium'] || 0) / totalProjects * 100) : 0 
+    },
+    { 
+      level: 'Low', 
+      count: riskDistribution['Low'] || 0, 
+      color: 'bg-green-500', 
+      percentage: totalProjects > 0 ? Math.round((riskDistribution['Low'] || 0) / totalProjects * 100) : 0 
+    }
   ];
 
   return (
@@ -624,7 +714,7 @@ export function AdminDashboardEnhanced({
                       const project = projects.find(p => p.id === conv.projectId);
                       if (!otherUser || !project) return null;
 
-                      const hasUnread = conv.unreadCount > 0;
+                      const hasUnread = (conv.count || conv.unreadCount || 0) > 0;
                       const isSelected = chatOtherUser?.id === otherUser.id && chatProject?.id === project.id;
 
                       return (
@@ -645,7 +735,7 @@ export function AdminDashboardEnhanced({
                                 </div>
                                 {hasUnread && (
                                   <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                                    {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                                    {(conv.count || conv.unreadCount || 0) > 9 ? '9+' : (conv.count || conv.unreadCount || 0)}
                                   </div>
                                 )}
                               </div>
@@ -799,20 +889,25 @@ export function AdminDashboardEnhanced({
       
       {/* CHAT PANEL - Always mounted when project/user exist, shown when chatPanelOpen and not in chats tab */}
       {chatProject && chatOtherUser ? (
-        <div className={chatPanelOpen && activeTab !== 'chats' ? '' : 'hidden'}>
-          <ChatPanel
-            project={chatProject}
-            currentUser={currentUser}
-            otherUser={chatOtherUser}
-            onClose={() => {
-              setChatPanelOpen(false);
-              // Keep project/user so ChatPanel stays mounted
-            }}
-            onMessageSent={() => {
-              window.dispatchEvent(new Event('message-sent'));
-              fetchUnreadCount();
-            }}
-          />
+        <div className={chatPanelOpen && activeTab !== 'chats' ? 'fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4' : 'hidden'}>
+          <div className="w-full max-w-4xl h-full max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <ChatPanel
+              project={chatProject}
+              currentUser={currentUser}
+              otherUser={chatOtherUser}
+              inline={true}
+              defaultFullscreen={false}
+              showProjectTitle={true}
+              onClose={() => {
+                setChatPanelOpen(false);
+                // Keep project/user so ChatPanel stays mounted
+              }}
+              onMessageSent={() => {
+                window.dispatchEvent(new Event('message-sent'));
+                fetchUnreadCount();
+              }}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -1539,14 +1634,14 @@ function CreatedReportsTab({ projects, currentUser }: any) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-1">Created Reports</h1>
-            <p className="text-gray-600">Oluşturulan raporları görüntüleyin</p>
+            <p className="text-gray-600">View created reports</p>
           </div>
           <select
             value={filterProjectId}
             onChange={(e) => setFilterProjectId(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">Tüm Projeler</option>
+            <option value="">All Projects</option>
             {projects.map((p: any) => (
               <option key={p.id || p._id} value={p.id || p._id}>
                 {p.title}
@@ -1559,21 +1654,21 @@ function CreatedReportsTab({ projects, currentUser }: any) {
       <div className="px-8 py-6">
         {/* Reports List */}
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Oluşturulan Raporlar</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Created Reports</h2>
           {loading ? (
-            <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
+            <div className="text-center py-8 text-gray-500">Loading...</div>
           ) : reports.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg">
-              <p className="text-gray-500 mb-2">Henüz rapor oluşturulmamış</p>
-              <p className="text-sm text-gray-400">Proje detay sayfasından rapor oluşturabilirsiniz</p>
+              <p className="text-gray-500 mb-2">No reports created yet</p>
+              <p className="text-sm text-gray-400">You can create reports from the project detail page</p>
             </div>
           ) : (
             <div className="space-y-3">
               {reports.map((report: any) => {
                 const reportId = report._id || report.id;
-                const projectTitle = report.projectId?.title || 'Bilinmeyen Proje';
-                const generatedBy = report.generatedBy?.name || 'Sistem';
-                const generatedAt = new Date(report.generatedAt || report.createdAt).toLocaleString('tr-TR');
+                const projectTitle = report.projectId?.title || 'Unknown Project';
+                const generatedBy = report.generatedBy?.name || 'System';
+                const generatedAt = new Date(report.generatedAt || report.createdAt).toLocaleString('en-US');
 
                 return (
                   <div
@@ -1588,13 +1683,13 @@ function CreatedReportsTab({ projects, currentUser }: any) {
                         <h3 className="font-medium text-gray-900 mb-1">{report.title}</h3>
                         <p className="text-sm text-gray-600 mb-2">{projectTitle}</p>
                         <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span>Oluşturan: {generatedBy}</span>
+                          <span>Created by: {generatedBy}</span>
                           <span>•</span>
                           <span>{generatedAt}</span>
                           {report.metadata && (
                             <>
                               <span>•</span>
-                              <span>{report.metadata.totalScores || 0} puan</span>
+                              <span>{report.metadata.totalScores || 0} scores</span>
                             </>
                           )}
                         </div>
@@ -1603,7 +1698,7 @@ function CreatedReportsTab({ projects, currentUser }: any) {
                         <button
                           onClick={(e) => handleDownloadPDF(reportId, report.title, e)}
                           className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
-                          title="PDF İndir"
+                          title="Download PDF"
                         >
                           <Download className="h-4 w-4" />
                           PDF
@@ -1614,7 +1709,7 @@ function CreatedReportsTab({ projects, currentUser }: any) {
                           'bg-yellow-100 text-yellow-800'
                         }`}>
                           {report.status === 'final' ? 'Final' :
-                           report.status === 'archived' ? 'Arşiv' : 'Taslak'}
+                           report.status === 'archived' ? 'Archived' : 'Draft'}
                         </span>
                       </div>
                     </div>
@@ -1660,7 +1755,7 @@ function CreatedReportsTab({ projects, currentUser }: any) {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
               >
                 <Download className="h-4 w-4" />
-                PDF İndir
+                Download PDF
               </button>
               <button
                 onClick={() => setSelectedReport(null)}
@@ -1764,7 +1859,7 @@ function ReportsTab({ projects, riskLevels, currentUser }: any) {
             onChange={(e) => setFilterProjectId(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">Tüm Projeler</option>
+            <option value="">All Projects</option>
             {projects.map((p: any) => (
               <option key={p.id || p._id} value={p.id || p._id}>
                 {p.title}
@@ -1777,7 +1872,7 @@ function ReportsTab({ projects, riskLevels, currentUser }: any) {
       <div className="px-8 py-6">
         {/* Projects List - Generate Reports */}
         <div className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Projeler için Rapor Oluştur</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Generate Reports for Projects</h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project: any) => {
               const projectId = project.id || project._id;
@@ -1808,7 +1903,7 @@ function ReportsTab({ projects, riskLevels, currentUser }: any) {
                           : 'bg-blue-600 text-white hover:bg-blue-700'
                       }`}
                     >
-                      {isGenerating ? 'Oluşturuluyor...' : 'Rapor Oluştur'}
+                      {isGenerating ? 'Generating...' : 'Generate Report'}
                     </button>
                   </div>
                 </div>
@@ -1819,21 +1914,21 @@ function ReportsTab({ projects, riskLevels, currentUser }: any) {
 
         {/* Reports List */}
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Oluşturulan Raporlar</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Created Reports</h2>
           {loading ? (
-            <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
+            <div className="text-center py-8 text-gray-500">Loading...</div>
           ) : reports.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg">
-              <p className="text-gray-500 mb-2">Henüz rapor oluşturulmamış</p>
-              <p className="text-sm text-gray-400">Yukarıdaki projeler için rapor oluşturabilirsiniz</p>
+              <p className="text-gray-500 mb-2">No reports created yet</p>
+              <p className="text-sm text-gray-400">You can create reports for the projects above</p>
             </div>
           ) : (
             <div className="space-y-3">
               {reports.map((report: any) => {
                 const reportId = report._id || report.id;
-                const projectTitle = report.projectId?.title || 'Bilinmeyen Proje';
-                const generatedBy = report.generatedBy?.name || 'Sistem';
-                const generatedAt = new Date(report.generatedAt || report.createdAt).toLocaleString('tr-TR');
+                const projectTitle = report.projectId?.title || 'Unknown Project';
+                const generatedBy = report.generatedBy?.name || 'System';
+                const generatedAt = new Date(report.generatedAt || report.createdAt).toLocaleString('en-US');
 
                 return (
                   <div
@@ -1846,13 +1941,13 @@ function ReportsTab({ projects, riskLevels, currentUser }: any) {
                         <h3 className="font-medium text-gray-900 mb-1">{report.title}</h3>
                         <p className="text-sm text-gray-600 mb-2">{projectTitle}</p>
                         <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span>Oluşturan: {generatedBy}</span>
+                          <span>Created by: {generatedBy}</span>
                           <span>•</span>
                           <span>{generatedAt}</span>
                           {report.metadata && (
                             <>
                               <span>•</span>
-                              <span>{report.metadata.totalScores || 0} puan</span>
+                              <span>{report.metadata.totalScores || 0} scores</span>
                             </>
                           )}
                         </div>
@@ -1863,7 +1958,7 @@ function ReportsTab({ projects, riskLevels, currentUser }: any) {
                         'bg-yellow-100 text-yellow-800'
                       }`}>
                         {report.status === 'final' ? 'Final' :
-                         report.status === 'archived' ? 'Arşiv' : 'Taslak'}
+                         report.status === 'archived' ? 'Archived' : 'Draft'}
                       </span>
                     </div>
                   </div>

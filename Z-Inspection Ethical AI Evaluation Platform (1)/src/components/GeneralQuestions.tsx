@@ -50,7 +50,11 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
   const [loading, setLoading] = useState(true);
   const [generalQuestions, setGeneralQuestions] = useState<GeneralQuestion[]>([]);
   const [completionPercentage, setCompletionPercentage] = useState(0);
+<<<<<<< HEAD
   const [showQuestionNav, setShowQuestionNav] = useState(false);
+=======
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+>>>>>>> d514f3d (education soruları ekledni, admin dashboard düzeltildi, chat görüntüsü iyileştirildi)
 
   // Convert backend question format to frontend format
   const convertQuestion = (q: any): GeneralQuestion => {
@@ -101,6 +105,8 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
           questionnaireKey = 'technical-expert-v1';
         } else if (role === 'legal-expert') {
           questionnaireKey = 'legal-expert-v1';
+        } else if (role === 'education-expert') {
+          questionnaireKey = 'education-expert-v1';
         }
         
         // Fetch both role-specific and general questions in parallel for better performance
@@ -438,6 +444,31 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
     return Math.round((completed / generalQuestions.length) * 100);
   };
 
+  // Check if a question is completed
+  const isQuestionCompleted = (q: GeneralQuestion): boolean => {
+    const questionKey = getQuestionKey(q);
+    const hasAnswer = !!(
+      answers[q.id] || 
+      answers[questionKey] || 
+      answers[q.code || ''] ||
+      answers[q._id || '']
+    );
+    const hasRisk = (
+      risks[q.id] !== undefined || 
+      risks[questionKey] !== undefined || 
+      risks[q.code || ''] !== undefined ||
+      risks[q._id || ''] !== undefined
+    );
+    return hasAnswer && hasRisk;
+  };
+
+  // Navigate to a specific question
+  const navigateToQuestion = (index: number) => {
+    if (index >= 0 && index < generalQuestions.length) {
+      setCurrentQuestionIndex(index);
+    }
+  };
+
   // Update completion percentage whenever answers, risks, or questions change
   useEffect(() => {
     if (generalQuestions.length > 0) {
@@ -526,6 +557,7 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
         </div>
       </div>
 
+<<<<<<< HEAD
       <div className="flex-1 px-4 py-8 max-w-5xl mx-auto w-full flex flex-col">
         <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
           {/* Mobile: question list drawer */}
@@ -597,15 +629,91 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                     >
                       <span className="font-medium">Q{idx + 1}</span>
                       {done && <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />}
+=======
+      <div className="flex-1 flex overflow-hidden">
+        {/* Questions Sidebar */}
+        {sidebarOpen && (
+          <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-[calc(100vh-80px)] sticky top-[80px]">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-900">Questions</h2>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                aria-label="Close sidebar"
+              >
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+              <div className="p-2 space-y-1">
+                {generalQuestions.map((q, index) => {
+                  const isCompleted = isQuestionCompleted(q);
+                  const isCurrent = index === currentQuestionIndex;
+                  const questionKey = getQuestionKey(q);
+                  const questionNumber = index + 1;
+                  
+                  return (
+                    <button
+                      key={q.id || index}
+                      onClick={() => navigateToQuestion(index)}
+                      className={`w-full text-left p-3 rounded-lg mb-1 transition-all ${
+                        isCurrent
+                          ? 'bg-blue-50 border-2 border-blue-500 text-blue-900'
+                          : 'hover:bg-gray-50 border-2 border-transparent text-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isCompleted ? (
+                          <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
+                        ) : (
+                          <div className={`h-5 w-5 rounded-full border-2 flex-shrink-0 ${
+                            isCurrent ? 'border-blue-500 bg-blue-100' : 'border-gray-300'
+                          }`}>
+                            <span className={`text-xs font-medium flex items-center justify-center h-full ${
+                              isCurrent ? 'text-blue-600' : 'text-gray-400'
+                            }`}>
+                              {questionNumber}
+                            </span>
+                          </div>
+                        )}
+                        <span className="text-sm font-medium truncate">
+                          Q{questionNumber}
+                        </span>
+                      </div>
+                      <p className={`text-xs mt-1 truncate ${
+                        isCurrent ? 'text-blue-700' : 'text-gray-500'
+                      }`}>
+                        {q.questionEn.substring(0, 40)}...
+                      </p>
+>>>>>>> d514f3d (education soruları ekledni, admin dashboard düzeltildi, chat görüntüsü iyileştirildi)
                     </button>
                   );
                 })}
               </div>
             </div>
           </div>
+<<<<<<< HEAD
 
           {/* Question Card */}
           <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1 min-h-0">
+=======
+        )}
+
+        {/* Show sidebar toggle button when closed */}
+        {!sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="fixed left-4 top-1/2 -translate-y-1/2 z-30 bg-blue-600 text-white p-3 rounded-r-lg shadow-lg hover:bg-blue-700 transition-colors"
+            aria-label="Open sidebar"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        )}
+
+      <div className="flex-1 px-4 py-8 max-w-5xl mx-auto w-full flex flex-col overflow-y-auto">
+        {/* Question Card */}
+        <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden flex flex-col flex-1">
+>>>>>>> d514f3d (education soruları ekledni, admin dashboard düzeltildi, chat görüntüsü iyileştirildi)
             <div className="p-8 border-b border-gray-100 bg-white">
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <span className="px-3 py-1 bg-blue-100 text-blue-600 text-sm font-medium rounded-full">
@@ -733,20 +841,33 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                   { value: 0, label: 'Unacceptable', labelTr: 'Kabul Edilemez', desc: 'No awareness, serious risk', color: 'red' }
                 ] as const).map(({ value, label, labelTr, desc, color }) => {
                   const questionKey = getQuestionKey(currentQuestion);
-                  // Get risk value - check all possible keys and handle undefined/null properly
-                  // Must use !== undefined check because 0 is falsy but valid
+                  // Get risk value - check all possible keys (same logic as working buttons 4, 3, 2)
                   let riskValue: number | undefined = undefined;
-                  if (currentQuestion.id && (risks[currentQuestion.id] === 0 || risks[currentQuestion.id] === 1 || risks[currentQuestion.id] === 2 || risks[currentQuestion.id] === 3 || risks[currentQuestion.id] === 4)) {
-                    riskValue = risks[currentQuestion.id];
-                  } else if (risks[questionKey] === 0 || risks[questionKey] === 1 || risks[questionKey] === 2 || risks[questionKey] === 3 || risks[questionKey] === 4) {
-                    riskValue = risks[questionKey];
-                  } else if (currentQuestion.code && (risks[currentQuestion.code] === 0 || risks[currentQuestion.code] === 1 || risks[currentQuestion.code] === 2 || risks[currentQuestion.code] === 3 || risks[currentQuestion.code] === 4)) {
-                    riskValue = risks[currentQuestion.code];
+                  
+                  // Check all possible keys - handle 0 and 1 correctly
+                  if (currentQuestion.id !== undefined) {
+                    const idVal = risks[currentQuestion.id];
+                    if (idVal !== undefined && idVal !== null && typeof idVal === 'number' && idVal >= 0 && idVal <= 4) {
+                      riskValue = idVal;
+                    }
                   }
                   
-                  // Use explicit equality checks to handle 0 and 1 correctly
-                  // Check if riskValue is a valid number (0-4) and equals the current value
-                  const isSelected = (riskValue === 0 || riskValue === 1 || riskValue === 2 || riskValue === 3 || riskValue === 4) && riskValue === value;
+                  if (riskValue === undefined) {
+                    const keyVal = risks[questionKey];
+                    if (keyVal !== undefined && keyVal !== null && typeof keyVal === 'number' && keyVal >= 0 && keyVal <= 4) {
+                      riskValue = keyVal;
+                    }
+                  }
+                  
+                  if (riskValue === undefined && currentQuestion.code !== undefined) {
+                    const codeVal = risks[currentQuestion.code];
+                    if (codeVal !== undefined && codeVal !== null && typeof codeVal === 'number' && codeVal >= 0 && codeVal <= 4) {
+                      riskValue = codeVal;
+                    }
+                  }
+                  
+                  // Use explicit type check and equality (same as working buttons 4, 3, 2)
+                  const isSelected = typeof riskValue === 'number' && riskValue === value;
                   
                   const colorClasses = {
                     green: isSelected ? 'border-green-500 bg-green-50 shadow-md' : 'border-gray-200 hover:border-green-300 hover:bg-green-50/30',
@@ -775,15 +896,27 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                         onChange={() => {
                           const questionKey = getQuestionKey(currentQuestion);
                           const riskValue = value as 0 | 1 | 2 | 3 | 4;
-                          console.log(`Setting risk for question ${questionKey} to ${riskValue}`);
-                          handleRiskChange(questionKey, riskValue);
-                          // Also update by id and code for backward compatibility
-                          if (currentQuestion.id !== questionKey) {
-                            handleRiskChange(currentQuestion.id, riskValue);
-                          }
-                          if (currentQuestion.code && currentQuestion.code !== questionKey && currentQuestion.code !== currentQuestion.id) {
-                            handleRiskChange(currentQuestion.code, riskValue);
-                          }
+                          console.log(`🔵 Setting risk for question ${questionKey} to ${riskValue}`, {
+                            questionKey,
+                            questionId: currentQuestion.id,
+                            questionCode: currentQuestion.code,
+                            riskValue,
+                            value,
+                            currentRisks: risks
+                          });
+                          // Update state directly (same as working buttons 4, 3, 2)
+                          setRisks((prev) => {
+                            const updated = { ...prev };
+                            updated[questionKey] = riskValue;
+                            if (currentQuestion.id) {
+                              updated[currentQuestion.id] = riskValue;
+                            }
+                            if (currentQuestion.code && currentQuestion.code !== questionKey) {
+                              updated[currentQuestion.code] = riskValue;
+                            }
+                            console.log('✅ Updated risks state:', updated);
+                            return updated;
+                          });
                         }}
                         className="hidden"
                       />
@@ -837,6 +970,7 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
             </button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

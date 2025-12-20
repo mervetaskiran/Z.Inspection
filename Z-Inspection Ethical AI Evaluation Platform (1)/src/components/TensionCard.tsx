@@ -12,7 +12,10 @@ interface TensionCardProps {
 }
 
 export function TensionCard({ tension, currentUser, onVote, onCommentClick, onDelete, disableVoting }: TensionCardProps) {
-  const userVote = tension.userVote; 
+  // userVote'u normalize et - string, null, undefined kontrolü
+  const userVote = tension.userVote === 'agree' || tension.userVote === 'disagree' 
+    ? tension.userVote 
+    : null; 
   const agreeCount = tension.consensus?.agree || 0;
   const disagreeCount = tension.consensus?.disagree || 0;
   const totalVotes = agreeCount + disagreeCount;
@@ -37,18 +40,18 @@ export function TensionCard({ tension, currentUser, onVote, onCommentClick, onDe
     return '#16a34a'; // green-600
   };
 
-  // Debug: Bar değerlerini kontrol et
-  console.log('Bar Debug:', {
-    agreeCount,
-    disagreeCount,
-    totalVotes,
-    agreePercentage,
-    color: getGreenColor(agreePercentage),
-    width: `${agreePercentage}%`
-  });
+  // Card border rengini userVote'a göre belirle - GeneralQuestions'taki gibi
+  const getCardBorderClass = () => {
+    if (userVote === 'agree') {
+      return 'border-2 border-green-500 bg-green-50 shadow-md';
+    } else if (userVote === 'disagree') {
+      return 'border-2 border-red-500 bg-red-50 shadow-md';
+    }
+    return 'border-2 border-gray-200 bg-white';
+  };
 
   return (
-    <div className="bg-white rounded-lg border p-4 shadow-sm hover:shadow-md transition-all mb-4">
+    <div className={`rounded-lg p-4 hover:shadow-md transition-all duration-200 mb-4 ${getCardBorderClass()}`}>
       {/* Üst Kısım: Risk Badge ve Tarih */}
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center space-x-2">

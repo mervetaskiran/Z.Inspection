@@ -464,8 +464,10 @@ export function SharedArea({ currentUser, projects, users, onBack }: SharedAreaP
               <button
                 type="submit"
                 disabled={!newMessage.trim() || sending}
-                className="px-6 py-3 text-white rounded-lg transition-colors hover:opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
-                style={{ backgroundColor: roleColor }}
+                className={`px-6 py-3 text-white rounded-lg transition-colors hover:opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center ${
+                  newMessage.trim() && !sending ? 'shadow-md' : ''
+                }`}
+                style={{ backgroundColor: newMessage.trim() && !sending ? '#2563eb' : roleColor }}
               >
                 {sending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

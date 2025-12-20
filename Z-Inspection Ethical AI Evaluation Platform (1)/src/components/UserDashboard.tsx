@@ -167,13 +167,23 @@ export function UserDashboard({
       if (response.ok) {
         const data = await response.json();
         console.log('Unread count fetched:', data);
-        setUnreadCount(data.totalCount || 0);
-        setUnreadConversations(data.conversations || []);
+        const conversations = data.conversations || [];
+        // Calculate actual unread count from conversations to ensure consistency
+        // Backend uses 'count' field, not 'unreadCount'
+        const actualUnreadCount = conversations.reduce((sum: number, conv: any) => sum + (conv.count || conv.unreadCount || 0), 0);
+        // Only show badge if there are actual conversations with unread messages
+        // This prevents showing badge when conversations array is empty but totalCount > 0
+        setUnreadCount(actualUnreadCount);
+        setUnreadConversations(conversations);
       } else {
         console.error('Failed to fetch unread count:', response.status, response.statusText);
+        setUnreadCount(0);
+        setUnreadConversations([]);
       }
     } catch (error) {
       console.error('Error fetching unread count:', error);
+      setUnreadCount(0);
+      setUnreadConversations([]);
     }
   };
 
@@ -335,10 +345,20 @@ export function UserDashboard({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Handle notification click - open project and mark as read
+  // Handle notification click - open chat panel
   const handleNotificationClick = async (conversation: any) => {
-    const project = projects.find(p => p.id === conversation.projectId);
-    if (project) {
+    const project = projects.find(p => p.id === conversation.projectId) ||
+      ({
+        id: conversation.projectId,
+        title: conversation.projectTitle || 'Project',
+      } as any);
+    const otherUser = users.find(u => u.id === conversation.fromUserId) ||
+      ({
+        id: conversation.fromUserId,
+        name: conversation.fromUserName || 'User',
+      } as any);
+    
+    if (project && otherUser) {
       // Mark messages as read
       try {
         await fetch(api('/api/messages/mark-read'), {
@@ -355,8 +375,10 @@ export function UserDashboard({
         console.error('Error marking messages as read:', error);
       }
 
-      // Open project with chat panel for the sender (also for notification-only messages)
-      onViewProject(project, conversation.fromUserId);
+      // Open chat panel (also for notification-only messages)
+      setChatProject(project);
+      setChatOtherUser(otherUser);
+      setChatPanelOpen(true);
       setShowNotifications(false);
     }
   };
@@ -719,7 +741,7 @@ export function UserDashboard({
                     const project = projects.find(p => p.id === conv.projectId);
                     if (!otherUser || !project) return null;
 
-                    const hasUnread = conv.unreadCount > 0;
+                    const hasUnread = (conv.count || conv.unreadCount || 0) > 0;
 
                     return (
                       <div
@@ -739,7 +761,7 @@ export function UserDashboard({
                             </div>
                             {hasUnread && (
                               <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                                {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                                {(conv.count || conv.unreadCount || 0) > 9 ? '9+' : (conv.count || conv.unreadCount || 0)}
                               </div>
                             )}
                           </div>
@@ -888,7 +910,7 @@ export function UserDashboard({
                               style={{ backgroundColor: roleColor }}
                             >
                               <Target className="h-3 w-3 mr-2" />
-                              Finish Evolution
+                              Finish Evaluation
                             </button>
                           );
                         }
@@ -901,7 +923,7 @@ export function UserDashboard({
                               style={{ backgroundColor: roleColor }}
                             >
                               <Play className="h-3 w-3 mr-2" />
-                              Start Evolution
+                              Start Evaluation
                             </button>
                           );
                         }
@@ -967,35 +989,61 @@ export function UserDashboard({
         </div>
       </div>
 
-      {/* Chat Panel */}
+      {/* Chat Panel - Same style as ProjectDetail contact */}
       {chatPanelOpen && chatOtherUser && chatProject && (
-        <ChatPanel
-          project={chatProject!}
-          currentUser={currentUser}
-          otherUser={chatOtherUser!}
-          onClose={() => {
-            setChatPanelOpen(false);
-            setChatOtherUser(null);
-            setChatProject(null);
-            if (showChats) {
-              fetchConversations();
-            }
-          }}
-          onMessageSent={() => {
-            window.dispatchEvent(new Event('message-sent'));
-            if (showChats) {
-              setTimeout(fetchConversations, 1000);
-            }
-          }}
-          onDeleteConversation={() => {
-            setChatPanelOpen(false);
-            setChatOtherUser(null);
-            setChatProject(null);
-            if (showChats) {
-              fetchConversations();
-            }
-          }}
-        />
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => {
+              setChatPanelOpen(false);
+              setChatOtherUser(null);
+              setChatProject(null);
+            }}
+            aria-hidden="true"
+          />
+
+          {/* Center modal */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="w-full max-w-2xl bg-white shadow-2xl border border-gray-200 rounded-xl overflow-hidden flex flex-col min-h-0"
+              style={{ height: '70vh', maxHeight: 650 }}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+            >
+              <div className="flex-1 min-h-0 flex flex-col">
+                <ChatPanel
+                  project={chatProject!}
+                  currentUser={currentUser}
+                  otherUser={chatOtherUser!}
+                  inline={true}
+                  onClose={() => {
+                    setChatPanelOpen(false);
+                    setChatOtherUser(null);
+                    setChatProject(null);
+                    if (showChats) {
+                      fetchConversations();
+                    }
+                  }}
+                  onMessageSent={() => {
+                    window.dispatchEvent(new Event('message-sent'));
+                    if (showChats) {
+                      setTimeout(fetchConversations, 1000);
+                    }
+                  }}
+                  onDeleteConversation={() => {
+                    setChatPanelOpen(false);
+                    setChatOtherUser(null);
+                    setChatProject(null);
+                    if (showChats) {
+                      fetchConversations();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* PROFILE MODAL */}

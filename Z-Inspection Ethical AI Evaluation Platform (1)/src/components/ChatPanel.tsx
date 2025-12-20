@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, MessageSquare, Minimize2, Maximize2, Trash2 } from 'lucide-react';
+import { X, Send, MessageSquare, Maximize2, Trash2 } from 'lucide-react';
 import { Message, User, Project } from '../types';
 import { api } from '../api';
 
@@ -415,16 +415,6 @@ export function ChatPanel({
             <Trash2 className="h-5 w-5" />
           </button>
 
-          {!inline && (
-            <button
-              onClick={() => setIsMinimized(true)}
-              className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors"
-              title="Minimize"
-            >
-              <Minimize2 className="h-5 w-5 text-gray-600" />
-            </button>
-          )}
-
           <button
             onClick={onClose}
             className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors"
@@ -535,7 +525,7 @@ export function ChatPanel({
       </div>
 
       {/* Input (fixed at bottom) */}
-      <div className="border-t border-gray-200 p-4 bg-white shrink-0" style={{ flexShrink: 0 }}>
+      <div className="border-t border-gray-200 px-4 py-4 bg-white shrink-0" style={{ flexShrink: 0, position: 'relative', zIndex: 10 }}>
         <div className="flex items-center space-x-2">
           <input
             type="text"
@@ -550,17 +540,18 @@ export function ChatPanel({
             placeholder="Type a message..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={sending}
+            style={{ pointerEvents: 'auto', zIndex: 20 }}
           />
           <button
             onClick={sendMessage}
             disabled={!newMessage.trim() || sending}
-            className={`p-2 rounded-lg ${
+            className={`p-2 rounded-lg transition-colors ${
               newMessage.trim() && !sending
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            } transition-colors`}
+            }`}
           >
-            <Send className="h-5 w-5" />
+            <Send className={`h-5 w-5 ${newMessage.trim() && !sending ? 'text-white' : 'text-gray-400'}`} />
           </button>
         </div>
       </div>

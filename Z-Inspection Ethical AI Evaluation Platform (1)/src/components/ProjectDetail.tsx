@@ -205,7 +205,8 @@ export function ProjectDetail({
             id: t._id || t.id,
             claimStatement: t.claimStatement || t.description, 
             description: t.description,
-            consensus: t.consensus || { agree: 0, disagree: 0 }
+            consensus: t.consensus || { agree: 0, disagree: 0 },
+            userVote: t.userVote || null // userVote'u da ekle
         }));
         setTensions(formattedData);
       }
@@ -401,6 +402,38 @@ export function ProjectDetail({
   };
 
   const handleVote = async (tensionId: string, voteType: 'agree' | 'disagree') => {
+    // Optimistic update: Anında state'i güncelle
+    setTensions(prevTensions => 
+      prevTensions.map(t => {
+        if ((t.id || (t as any)._id) === tensionId) {
+          const currentAgree = t.consensus?.agree || 0;
+          const currentDisagree = t.consensus?.disagree || 0;
+          const oldVote = t.userVote;
+          
+          // Eski oyu çıkar
+          let newAgree = currentAgree;
+          let newDisagree = currentDisagree;
+          if (oldVote === 'agree') newAgree = Math.max(0, newAgree - 1);
+          if (oldVote === 'disagree') newDisagree = Math.max(0, newDisagree - 1);
+          
+          // Yeni oyu ekle (eğer aynı butona basıldıysa oyu kaldır)
+          const newVote = oldVote === voteType ? null : voteType;
+          if (newVote === 'agree') newAgree += 1;
+          if (newVote === 'disagree') newDisagree += 1;
+          
+          return {
+            ...t,
+            userVote: newVote,
+            consensus: {
+              agree: newAgree,
+              disagree: newDisagree
+            }
+          };
+        }
+        return t;
+      })
+    );
+    
     try {
       const response = await fetch(api(`/api/tensions/${tensionId}/vote`), {
         method: 'POST',
@@ -408,10 +441,16 @@ export function ProjectDetail({
         body: JSON.stringify({ userId: currentUser.id, voteType }),
       });
       if (response.ok) {
+        // Backend'den güncel veriyi al
+        fetchTensions();
+      } else {
+        // Hata durumunda geri al
         fetchTensions();
       }
     } catch (error) {
       console.error("Vote error:", error);
+      // Hata durumunda geri al
+      fetchTensions();
     }
   };
 
@@ -588,12 +627,12 @@ export function ProjectDetail({
             )}
             {isAssigned && progressDisplay < 100 && (
               <button onClick={onStartEvaluation} className="px-4 py-2 text-white rounded-lg hover:opacity-90" style={{ backgroundColor: roleColor }}>
-                Start Evolution
+                Start Evaluation
               </button>
             )}
             {isAssigned && progressDisplay >= 100 && !evolutionCompletedAt && (
               <button onClick={onFinishEvolution} className="px-4 py-2 text-white rounded-lg hover:opacity-90" style={{ backgroundColor: roleColor }}>
-                Finish Evolution
+                Finish Evaluation
               </button>
             )}
           </div>

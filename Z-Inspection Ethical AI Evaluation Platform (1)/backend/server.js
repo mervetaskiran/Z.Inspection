@@ -928,6 +928,7 @@ app.post('/api/evaluations', async (req, res) => {
         else if (role === 'medical-expert') roleQuestionnaireKey = 'medical-expert-v1';
         else if (role === 'technical-expert') roleQuestionnaireKey = 'technical-expert-v1';
         else if (role === 'legal-expert') roleQuestionnaireKey = 'legal-expert-v1';
+        else if (role === 'education-expert') roleQuestionnaireKey = 'education-expert-v1';
         
         // Create or get assignment
         let assignment = await ProjectAssignment.findOne({ projectId: projectIdObj, userId: userIdObj });
@@ -1601,6 +1602,7 @@ app.post('/api/general-questions', async (req, res) => {
         else if (role === 'medical-expert') questionnaireKey = 'medical-expert-v1';
         else if (role === 'technical-expert') questionnaireKey = 'technical-expert-v1';
         else if (role === 'legal-expert') questionnaireKey = 'legal-expert-v1';
+        else if (role === 'education-expert') questionnaireKey = 'education-expert-v1';
         
         const questionnaires = role !== 'any' && questionnaireKey !== 'general-v1' 
           ? ['general-v1', questionnaireKey]
@@ -1621,6 +1623,7 @@ app.post('/api/general-questions', async (req, res) => {
       else if (role === 'medical-expert') roleQuestionnaireKey = 'medical-expert-v1';
       else if (role === 'technical-expert') roleQuestionnaireKey = 'technical-expert-v1';
       else if (role === 'legal-expert') roleQuestionnaireKey = 'legal-expert-v1';
+      else if (role === 'education-expert') roleQuestionnaireKey = 'education-expert-v1';
       
       // Get all questions to determine which questionnaire they belong to
       const allGeneralQuestions = await Question.find({ questionnaireKey: 'general-v1' }).select('code').lean();
@@ -1984,6 +1987,10 @@ app.get('/api/user-progress', async (req, res) => {
         const legalV1 = await Question.findOne({ questionnaireKey: 'legal-v1' });
         const legalExpertV1 = await Question.findOne({ questionnaireKey: 'legal-expert-v1' });
         roleQuestionnaireKey = legalV1 ? 'legal-v1' : (legalExpertV1 ? 'legal-expert-v1' : 'legal-v1');
+      } else if (role === 'education-expert') {
+        const educationV1 = await Question.findOne({ questionnaireKey: 'education-v1' });
+        const educationExpertV1 = await Question.findOne({ questionnaireKey: 'education-expert-v1' });
+        roleQuestionnaireKey = educationV1 ? 'education-v1' : (educationExpertV1 ? 'education-expert-v1' : 'education-expert-v1');
       }
       
       if (roleQuestionnaireKey) {
@@ -2006,7 +2013,8 @@ app.get('/api/user-progress', async (req, res) => {
         (role === 'ethical-expert' && (key === 'ethical-v1' || key === 'ethical-expert-v1')) ||
         (role === 'medical-expert' && (key === 'medical-v1' || key === 'medical-expert-v1')) ||
         (role === 'technical-expert' && (key === 'technical-v1' || key === 'technical-expert-v1')) ||
-        (role === 'legal-expert' && (key === 'legal-v1' || key === 'legal-expert-v1'))
+        (role === 'legal-expert' && (key === 'legal-v1' || key === 'legal-expert-v1')) ||
+        (role === 'education-expert' && (key === 'education-v1' || key === 'education-expert-v1'))
       );
       
       if (!hasRoleQuestionnaire && role !== 'use-case-owner' && role !== 'admin') {
@@ -2028,10 +2036,25 @@ app.get('/api/user-progress', async (req, res) => {
           const legalV1 = await Question.findOne({ questionnaireKey: 'legal-v1' });
           const legalExpertV1 = await Question.findOne({ questionnaireKey: 'legal-expert-v1' });
           roleQuestionnaireKey = legalV1 ? 'legal-v1' : (legalExpertV1 ? 'legal-expert-v1' : null);
+        } else if (role === 'education-expert') {
+          const educationV1 = await Question.findOne({ questionnaireKey: 'education-v1' });
+          const educationExpertV1 = await Question.findOne({ questionnaireKey: 'education-expert-v1' });
+          roleQuestionnaireKey = educationV1 ? 'education-v1' : (educationExpertV1 ? 'education-expert-v1' : null);
         }
         
         if (roleQuestionnaireKey && !assignedQuestionnaireKeys.includes(roleQuestionnaireKey)) {
           assignedQuestionnaireKeys.push(roleQuestionnaireKey);
+          // Also update the assignment in database to persist this change
+          try {
+            await ProjectAssignment.findOneAndUpdate(
+              { projectId: projectIdObj, userId: userIdObj },
+              { $set: { questionnaires: assignedQuestionnaireKeys } },
+              { new: true }
+            );
+            console.log(`✅ Updated assignment with missing questionnaire: ${roleQuestionnaireKey}`);
+          } catch (updateError) {
+            console.warn(`⚠️ Failed to update assignment with questionnaire ${roleQuestionnaireKey}:`, updateError.message);
+          }
         }
       }
     }
@@ -2653,6 +2676,26 @@ app.get('/api/projects', async (req, res) => {
       .maxTimeMS(5000)
       .limit(1000);
     res.json(projects);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get scores for a project (or all projects if projectId not provided)
+app.get('/api/scores', async (req, res) => {
+  try {
+    const Score = require('./models/score');
+    const { projectId } = req.query;
+    
+    const query = {};
+    if (projectId) {
+      query.projectId = isValidObjectId(projectId) 
+        ? new mongoose.Types.ObjectId(projectId) 
+        : projectId;
+    }
+    
+    const scores = await Score.find(query).lean();
+    res.json(scores);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -12,7 +12,8 @@ function getQuestionnaireKeyForRole(role) {
     'ethical-expert': 'ethical-expert-v1',
     'medical-expert': 'medical-expert-v1',
     'technical-expert': 'technical-expert-v1',
-    'legal-expert': 'legal-expert-v1'
+    'legal-expert': 'legal-expert-v1',
+    'education-expert': 'education-expert-v1'
   };
   
   return roleToQuestionnaire[role] || 'general-v1';

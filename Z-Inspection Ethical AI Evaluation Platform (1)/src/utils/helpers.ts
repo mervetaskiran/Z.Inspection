@@ -97,8 +97,26 @@ export const formatLastSeen = (timestamp: string) => {
 };
 
 export const getUserProjects = (userId: string, projects: Project[]) => {
-  const userDetails = mockUserDetails[userId as keyof typeof mockUserDetails];
-  return projects.filter(project => userDetails?.currentProjects.includes(project.id));
+  // Get projects where user is assigned and project is not completed
+  return projects.filter(project => {
+    const projectId = project.id || (project as any)._id;
+    const assignedUsers = project.assignedUsers || [];
+    const userIdStr = String(userId);
+    
+    // Check if user is assigned to this project
+    const isAssigned = assignedUsers.some((assignedId: any) => {
+      const assignedIdStr = String(assignedId?.id || assignedId?._id || assignedId);
+      return assignedIdStr === userIdStr;
+    });
+    
+    if (!isAssigned) return false;
+    
+    // Exclude completed projects (evolutionCompleted: true or progress: 100)
+    const isCompleted = (project as any).evolutionCompleted === true ||
+                        (project.progress !== undefined && project.progress >= 100);
+    
+    return !isCompleted;
+  });
 };
 
 export const getUserById = (userId: string, users: User[]) => {

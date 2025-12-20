@@ -90,8 +90,13 @@ export function UseCaseOwnerDashboard({
       if (response.ok) {
         const data = await response.json();
         console.log('UseCaseOwner unread count fetched:', data);
-        setUnreadCount(data.totalCount || 0);
-        setUnreadConversations(data.conversations || []);
+        const conversations = data.conversations || [];
+        // Calculate actual unread count from conversations to ensure consistency
+        // Backend uses 'count' field, not 'unreadCount'
+        const actualUnreadCount = conversations.reduce((sum: number, conv: any) => sum + (conv.count || conv.unreadCount || 0), 0);
+        // Only show badge if there are actual conversations with unread messages
+        setUnreadCount(actualUnreadCount);
+        setUnreadConversations(conversations);
       } else {
         console.error('UseCaseOwner failed to fetch unread count:', response.status, response.statusText);
       }
