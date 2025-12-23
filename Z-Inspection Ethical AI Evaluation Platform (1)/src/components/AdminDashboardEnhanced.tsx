@@ -1705,13 +1705,14 @@ function CreatedReportsTab({ projects, currentUser }: any) {
   );
 }
 
-function ReportsTab({ projects, currentUser }: any) {
+function ReportsTab({ projects, currentUser, users }: any) {
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
   const [showGeneratingMessage, setShowGeneratingMessage] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any | null>(null);
   const [filterProjectId, setFilterProjectId] = useState<string>('');
+  const [projectProgresses, setProjectProgresses] = useState<Record<string, number>>({});
 
   // Fetch all reports
   const fetchReports = async () => {
@@ -1781,6 +1782,62 @@ function ReportsTab({ projects, currentUser }: any) {
     }
   };
 
+  // Fetch progress for all projects
+  useEffect(() => {
+    const fetchAllProgresses = async () => {
+      if (!users || users.length === 0) return;
+      
+      const progresses: Record<string, number> = {};
+      await Promise.all(
+        projects.map(async (project: any) => {
+          const projectId = project.id || (project as any)._id;
+          if (!project.assignedUsers || project.assignedUsers.length === 0) {
+            progresses[projectId] = 0;
+            return;
+          }
+
+          try {
+            const assignedUserIds = project.assignedUsers;
+            const progressPromises = assignedUserIds.map(async (userId: string) => {
+              const user = users.find((u: any) => (u.id || (u as any)._id) === userId);
+              if (!user) return 0;
+              
+              try {
+                const { fetchUserProgress } = await import('../utils/userProgress');
+                const progress = await fetchUserProgress(project, user);
+                return progress;
+              } catch (error) {
+                console.error(`Error fetching progress for user ${userId}:`, error);
+                return 0;
+              }
+            });
+
+            const progressesList = await Promise.all(progressPromises);
+            const validProgresses = progressesList.filter(p => p > 0);
+            
+            if (validProgresses.length > 0) {
+              const average = validProgresses.reduce((sum, p) => sum + p, 0) / validProgresses.length;
+              progresses[projectId] = Math.round(average);
+            } else {
+              progresses[projectId] = 0;
+            }
+          } catch (error) {
+            console.error(`Error calculating progress for project ${projectId}:`, error);
+            progresses[projectId] = 0;
+          }
+        })
+      );
+      
+      setProjectProgresses(progresses);
+    };
+
+    if (projects.length > 0 && users && users.length > 0) {
+      fetchAllProgresses();
+      const interval = setInterval(fetchAllProgresses, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [projects, users]);
+
   useEffect(() => {
     fetchReports();
   }, [filterProjectId]);
@@ -1834,6 +1891,9 @@ function ReportsTab({ projects, currentUser }: any) {
               const projectReports = reports.filter((r: any) => 
                 (r.projectId?._id || r.projectId) === projectId
               );
+              const projectProgress = projectProgresses[projectId] ?? project.progress ?? 0;
+              const isComplete = projectProgress >= 100;
+              const canGenerate = isComplete && !isGenerating;
 
               return (
                 <div
@@ -1844,18 +1904,33 @@ function ReportsTab({ projects, currentUser }: any) {
                   <p className="text-sm text-gray-500 mb-3 line-clamp-2">
                     {project.shortDescription || project.fullDescription || 'Açıklama yok'}
                   </p>
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                      <span>Progress</span>
+                      <span className="font-medium">{projectProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-1.5">
+                      <div
+                        className={`h-1.5 rounded-full transition-all ${
+                          isComplete ? 'bg-green-500' : 'bg-gray-300'
+                        }`}
+                        style={{ width: `${Math.min(100, projectProgress)}%`, minWidth: projectProgress > 0 ? '8px' : '0' }}
+                      />
+                    </div>
+                  </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500">
                       {projectReports.length} rapor
                     </span>
                     <button
                       onClick={() => handleGenerateReport(projectId)}
-                      disabled={isGenerating}
+                      disabled={!canGenerate}
                       className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                        isGenerating
+                        !canGenerate
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-green-600 text-white hover:bg-green-700'
                       }`}
+                      title={!isComplete ? 'Project must be 100% complete to generate report' : ''}
                     >
                       {isGenerating ? 'Generating...' : 'Generate Report'}
                     </button>

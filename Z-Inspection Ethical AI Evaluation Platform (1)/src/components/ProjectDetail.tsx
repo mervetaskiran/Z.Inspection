@@ -458,6 +458,17 @@ export function ProjectDetail({
   const roleColor = roleColors[currentUser.role as keyof typeof roleColors] || '#1F2937';
   const isAssigned = project.assignedUsers.includes(currentUser.id);
   const progressDisplay = Math.max(0, Math.min(100, userProgress));
+  
+  // Calculate team average progress for display (admin should see team average, not their own 0%)
+  const calculateTeamAverageProgress = () => {
+    const progressValues = Object.values(memberProgresses);
+    if (progressValues.length === 0) return 0;
+    const sum = progressValues.reduce((acc, val) => acc + val, 0);
+    return sum / progressValues.length;
+  };
+  const teamAverageProgress = calculateTeamAverageProgress();
+  const displayProgress = currentUser.role === 'admin' ? teamAverageProgress : progressDisplay;
+  
   const canViewOwners = currentUser.role === 'admin';
   const isCommentedProjectForUser = currentUser.role !== 'admin' && Boolean(evolutionCompletedAt);
   const canManageTensions = !isCommentedProjectForUser;
@@ -612,19 +623,32 @@ export function ProjectDetail({
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            {currentUser.role === 'admin' && (
-              <button
-                onClick={handleGenerateReport}
-                disabled={generating}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  generating
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-              >
-                {generating ? 'Generating...' : 'Generate Report'}
-              </button>
-            )}
+            {currentUser.role === 'admin' && (() => {
+              // Calculate team average progress for admin
+              const calculateTeamAverageProgress = () => {
+                const progressValues = Object.values(memberProgresses);
+                if (progressValues.length === 0) return 0;
+                const sum = progressValues.reduce((acc, val) => acc + val, 0);
+                return sum / progressValues.length;
+              };
+              const teamAverageProgress = calculateTeamAverageProgress();
+              const isComplete = teamAverageProgress >= 100;
+              const canGenerate = isComplete && !generating;
+              return (
+                <button
+                  onClick={handleGenerateReport}
+                  disabled={!canGenerate}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    !canGenerate
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                  title={!isComplete ? 'Project must be 100% complete to generate report' : ''}
+                >
+                  {generating ? 'Generating...' : 'Generate Report'}
+                </button>
+              );
+            })()}
             {isAssigned && progressDisplay < 100 && (
               <button onClick={onStartEvaluation} className="px-4 py-2 text-white rounded-lg hover:opacity-90" style={{ backgroundColor: roleColor }}>
                 Start Evaluation
@@ -651,7 +675,7 @@ export function ProjectDetail({
           </div>
           <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
             <Target className="h-5 w-5 text-gray-400 mr-3" />
-            <div><div className="text-xs text-gray-600">Progress</div><div className="text-sm font-medium">{progressDisplay}%</div></div>
+            <div><div className="text-xs text-gray-600">Progress</div><div className="text-sm font-medium">{Math.round(displayProgress)}%</div></div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
             <BarChart3 className="h-5 w-5 text-gray-400 mr-3" />
