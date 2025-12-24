@@ -788,16 +788,18 @@ export function GeneralQuestions({ project, currentUser, onBack, onComplete }: G
                   const colorClasses = {
                     green: isSelected ? 'border-green-500 bg-green-50 shadow-md' : 'border-gray-200 hover:border-green-300 hover:bg-green-50/30',
                     blue: isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/30',
-                    yellow: isSelected ? 'border-yellow-500 bg-yellow-50 shadow-md' : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50/30',
-                    orange: isSelected ? 'border-orange-500 bg-orange-200 shadow-md' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50',
-                    red: isSelected ? 'border-red-500 bg-red-200 shadow-md' : 'border-gray-200 hover:border-red-300 hover:bg-red-50'
+                    // Make 2/1 states visually distinct and obvious when selected
+                    yellow: isSelected ? 'border-yellow-600 bg-yellow-100 shadow-md ring-2 ring-yellow-200 ring-offset-2' : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50/30',
+                    orange: isSelected ? 'border-orange-600 bg-orange-100 shadow-md ring-2 ring-orange-200 ring-offset-2' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50',
+                    // Make 0 (Unacceptable) clearly red when selected
+                    red: isSelected ? 'border-red-700 bg-red-100 shadow-md ring-2 ring-red-200 ring-offset-2' : 'border-gray-200 hover:border-red-300 hover:bg-red-50'
                   };
                   const bgColorClasses = {
                     green: isSelected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400',
                     blue: isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400',
-                    yellow: isSelected ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400',
-                    orange: isSelected ? 'bg-orange-200 text-orange-800' : 'bg-gray-100 text-gray-400',
-                    red: isSelected ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'
+                    yellow: isSelected ? 'bg-yellow-200 text-yellow-900' : 'bg-gray-100 text-gray-400',
+                    orange: isSelected ? 'bg-orange-200 text-orange-900' : 'bg-gray-100 text-gray-400',
+                    red: isSelected ? 'bg-red-200 text-red-900' : 'bg-gray-100 text-gray-400'
                   };
                   return (
                     <label
