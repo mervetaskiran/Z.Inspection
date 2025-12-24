@@ -32,6 +32,7 @@ interface UserDashboardProps {
   onDeleteProject: (projectId: string) => void;
   onNavigate: (view: string) => void;
   onViewUseCase?: (useCase: UseCase) => void;
+  onReviewReport?: (reportId: string) => void;
   onLogout: () => void;
   onUpdateUser?: (user: User) => void;
   preferredTab?: "assigned" | "finished" | null;
@@ -81,6 +82,7 @@ export function UserDashboard({
   onNavigate,
   onLogout,
   onUpdateUser,
+  onReviewReport,
   preferredTab,
   onPreferredTabApplied,
   assignmentsRefreshToken,
@@ -237,7 +239,7 @@ export function UserDashboard({
   const fetchReports = async () => {
     try {
       setReportsLoading(true);
-      const response = await fetch(api(`/api/reports/my-reports?userId=${currentUser.id}`));
+      const response = await fetch(api(`/api/reports/assigned-to-me?userId=${currentUser.id}`));
       if (response.ok) {
         const data = await response.json();
         setReports(data);
@@ -259,7 +261,7 @@ export function UserDashboard({
   // View report
   const handleViewReport = async (reportId: string) => {
     try {
-      const response = await fetch(api(`/api/reports/${reportId}`));
+      const response = await fetch(api(`/api/reports/${reportId}?userId=${currentUser.id}`));
       if (response.ok) {
         const data = await response.json();
         setSelectedReport(data);
@@ -278,7 +280,7 @@ export function UserDashboard({
       e.stopPropagation();
     }
     try {
-      const response = await fetch(api(`/api/reports/${reportId}/download`));
+      const response = await fetch(api(`/api/reports/${reportId}/download?userId=${currentUser.id}`));
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -309,7 +311,7 @@ export function UserDashboard({
     if (!confirmDelete) return;
 
     try {
-      const response = await fetch(api(`/api/reports/${reportId}`), {
+      const response = await fetch(api(`/api/reports/${reportId}?userId=${currentUser.id}`), {
         method: 'DELETE'
       });
       if (response.ok) {
@@ -1138,6 +1140,19 @@ export function UserDashboard({
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
+                                {onReviewReport && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onReviewReport(reportId);
+                                    }}
+                                    className="px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors flex items-center gap-2"
+                                    title="Review report"
+                                  >
+                                    <FileText className="h-4 w-4" />
+                                    Review
+                                  </button>
+                                )}
                                 <button
                                   onClick={(e) => handleDownloadPDF(reportId, report.title, e)}
                                   className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
@@ -1146,14 +1161,16 @@ export function UserDashboard({
                                   <Download className="h-4 w-4" />
                                   PDF
                                 </button>
-                                <button
-                                  onClick={(e) => handleDeleteReport(reportId, report.title, e)}
-                                  className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
-                                  title="Delete Report"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Delete
-                                </button>
+                                {currentUser.role === "admin" && (
+                                  <button
+                                    onClick={(e) => handleDeleteReport(reportId, report.title, e)}
+                                    className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                                    title="Delete Report"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete
+                                  </button>
+                                )}
                                 <span className={`px-2 py-1 text-xs font-medium rounded ${
                                   report.status === 'final' ? 'bg-green-100 text-green-800' :
                                   report.status === 'archived' ? 'bg-gray-100 text-gray-800' :
@@ -1268,7 +1285,15 @@ export function UserDashboard({
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="prose max-w-none whitespace-pre-wrap text-gray-700">
-                {selectedReport.content}
+                {(() => {
+                  const sections = (selectedReport as any).sections;
+                  if (Array.isArray(sections) && sections.length > 0) {
+                    const s = sections[0];
+                    const expert = String(s?.expertEdit || "").trim();
+                    return expert.length > 0 ? expert : (s?.aiDraft || "");
+                  }
+                  return (selectedReport as any).content;
+                })()}
               </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
@@ -1285,18 +1310,20 @@ export function UserDashboard({
                   <Download className="h-4 w-4" />
                   Download PDF
                 </button>
-                <button
-                  onClick={() => {
-                    if (selectedReport) {
-                      const reportId = selectedReport._id || selectedReport.id;
-                      handleDeleteReport(reportId, selectedReport.title);
-                    }
-                  }}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Report
-                </button>
+                {currentUser.role === "admin" && (
+                  <button
+                    onClick={() => {
+                      if (selectedReport) {
+                        const reportId = selectedReport._id || selectedReport.id;
+                        handleDeleteReport(reportId, selectedReport.title);
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Report
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => setSelectedReport(null)}

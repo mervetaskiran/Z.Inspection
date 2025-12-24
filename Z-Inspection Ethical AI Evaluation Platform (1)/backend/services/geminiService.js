@@ -31,25 +31,50 @@ const generationConfig = {
 ============================================================ */
 
 async function testApiKey() {
-  try {
-    const model = genAI.getGenerativeModel({
-      model: "models/gemini-2.5-flash"
-    });
+  const modelsToTry = [
+    // Prefer 2.5, fallback to 1.5 if 2.5 isn't available for this API key/project
+    { id: "gemini-2.5-flash", names: ["models/gemini-2.5-flash", "gemini-2.5-flash"] },
+    { id: "gemini-1.5-flash", names: ["models/gemini-1.5-flash", "gemini-1.5-flash"] }
+  ];
 
-    const result = await model.generateContent("Hello");
-    const text = result.response.text();
+  let lastError = null;
 
-    return {
-      valid: Boolean(text),
-      availableModels: ["gemini-2.5-flash"]
-    };
-  } catch (error) {
-    return {
-      valid: false,
-      availableModels: [],
-      error: error.message
-    };
+  for (const candidate of modelsToTry) {
+    for (const modelName of candidate.names) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent("Hello");
+        const text = result?.response?.text?.();
+
+        return {
+          valid: Boolean(text),
+          availableModels: [candidate.id]
+        };
+      } catch (error) {
+        lastError = error;
+
+        const msg = String(error?.message || "");
+        const isModelNotFound = msg.includes("404") || msg.toLowerCase().includes("not found");
+
+        // If the error isn't about model availability, don't continue trying fallbacks
+        if (!isModelNotFound) {
+          return {
+            valid: false,
+            availableModels: [],
+            error: msg
+          };
+        }
+
+        // Otherwise, try next model format / next model id
+      }
+    }
   }
+
+  return {
+    valid: false,
+    availableModels: [],
+    error: lastError?.message || "Model not available"
+  };
 }
 
 
@@ -77,10 +102,12 @@ Requirements:
 - Include page-break considerations in your structure
 `;
 
-  // Try gemini-2.5-flash model formats only
+  // Try 2.5 first, fallback to 1.5 if 2.5 isn't available for this API key/project
   const modelNamesToTry = [
     "models/gemini-2.5-flash",
-    "gemini-2.5-flash"
+    "gemini-2.5-flash",
+    "models/gemini-1.5-flash",
+    "gemini-1.5-flash"
   ];
 
   let lastError = null;

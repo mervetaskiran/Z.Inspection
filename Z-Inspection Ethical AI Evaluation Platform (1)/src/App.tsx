@@ -13,6 +13,7 @@ import { AddGeneralQuestion } from "./components/AddGeneralQuestion";
 import { SharedArea } from "./components/SharedArea";
 import { OtherMembers } from "./components/OtherMembers";
 import { PreconditionApproval } from "./components/PreconditionApproval";
+import { ReportReview } from "./components/ReportReview";
 import {
   User,
   Project,
@@ -28,6 +29,7 @@ function App() {
   const [selectedTension, setSelectedTension] = useState<Tension | null>(null);
   const [selectedOwner, setSelectedOwner] = useState<User | null>(null);
   const [selectedUseCase, setSelectedUseCase] = useState<UseCase | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [useCases, setUseCases] = useState<UseCase[]>([]);
@@ -78,6 +80,22 @@ function App() {
     };
 
     fetchAllData();
+  }, []);
+
+  // Minimal URL-based route support for report review screen: /reports/:reportId/review
+  useEffect(() => {
+    const syncRouteFromUrl = () => {
+      const path = window.location.pathname || "";
+      const m = path.match(/^\/reports\/([^/]+)\/review\/?$/);
+      if (m && m[1]) {
+        setSelectedReportId(m[1]);
+        setCurrentView("report-review");
+      }
+    };
+
+    syncRouteFromUrl();
+    window.addEventListener("popstate", syncRouteFromUrl);
+    return () => window.removeEventListener("popstate", syncRouteFromUrl);
   }, []);
 
   // --- LOGIN ---
@@ -197,6 +215,17 @@ function App() {
     setSelectedTension(null);
     setSelectedOwner(null);
     setSelectedUseCase(null);
+    setSelectedReportId(null);
+  };
+
+  const handleReviewReport = (reportId: string) => {
+    setSelectedReportId(reportId);
+    setCurrentView("report-review");
+    try {
+      window.history.pushState({}, "", `/reports/${reportId}/review`);
+    } catch {
+      // ignore
+    }
   };
 
   const handleFinishEvolution = async (project: Project) => {
@@ -421,6 +450,24 @@ function App() {
   }
 
   const renderContent = () => {
+    if (currentView === "report-review" && currentUser && selectedReportId) {
+      return (
+        <ReportReview
+          reportId={selectedReportId}
+          currentUser={currentUser}
+          onBack={() => {
+            try {
+              window.history.pushState({}, "", "/");
+            } catch {
+              // ignore
+            }
+            setSelectedReportId(null);
+            setCurrentView("dashboard");
+          }}
+        />
+      );
+    }
+
     switch (currentView) {
       case "project-detail":
         return selectedProject ? (
@@ -496,6 +543,7 @@ function App() {
               onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
               onViewUseCase={handleViewUseCase}
+              onReviewReport={handleReviewReport}
               onLogout={handleLogout}
               onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
               preferredTab={dashboardPreferredTab}
@@ -579,6 +627,7 @@ function App() {
               onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
               onViewUseCase={handleViewUseCase}
+              onReviewReport={handleReviewReport}
               onLogout={handleLogout}
               onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
               preferredTab={dashboardPreferredTab}
@@ -661,6 +710,7 @@ function App() {
               onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
               onViewUseCase={handleViewUseCase}
+              onReviewReport={handleReviewReport}
               onLogout={handleLogout}
               onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
               preferredTab={dashboardPreferredTab}
@@ -782,6 +832,7 @@ function App() {
               onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
               onViewUseCase={handleViewUseCase}
+              onReviewReport={handleReviewReport}
               onLogout={handleLogout}
               onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
               preferredTab={dashboardPreferredTab}
@@ -839,6 +890,7 @@ function App() {
               onDeleteProject={handleDeleteProject}
               onNavigate={setCurrentView}
               onViewUseCase={handleViewUseCase}
+              onReviewReport={handleReviewReport}
               onLogout={handleLogout}
               onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
               preferredTab={dashboardPreferredTab}

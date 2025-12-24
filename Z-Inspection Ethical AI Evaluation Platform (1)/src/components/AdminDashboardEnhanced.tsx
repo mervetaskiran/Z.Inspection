@@ -1450,8 +1450,8 @@ function CreatedReportsTab({ projects, currentUser }: any) {
     try {
       setLoading(true);
       const url = filterProjectId 
-        ? api(`/api/reports?projectId=${filterProjectId}`)
-        : api('/api/reports');
+        ? api(`/api/reports?userId=${currentUser.id}&projectId=${filterProjectId}`)
+        : api(`/api/reports?userId=${currentUser.id}`);
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -1467,7 +1467,7 @@ function CreatedReportsTab({ projects, currentUser }: any) {
   // View report
   const handleViewReport = async (reportId: string) => {
     try {
-      const response = await fetch(api(`/api/reports/${reportId}`));
+      const response = await fetch(api(`/api/reports/${reportId}?userId=${currentUser.id}`));
       if (response.ok) {
         const data = await response.json();
         setSelectedReport(data);
@@ -1486,7 +1486,7 @@ function CreatedReportsTab({ projects, currentUser }: any) {
       e.stopPropagation(); // Prevent card click event
     }
     try {
-      const response = await fetch(api(`/api/reports/${reportId}/download`));
+      const response = await fetch(api(`/api/reports/${reportId}/download?userId=${currentUser.id}`));
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -1517,7 +1517,7 @@ function CreatedReportsTab({ projects, currentUser }: any) {
     if (!confirmDelete) return;
 
     try {
-      const response = await fetch(api(`/api/reports/${reportId}`), {
+      const response = await fetch(api(`/api/reports/${reportId}?userId=${currentUser.id}`), {
         method: 'DELETE'
       });
       if (response.ok) {
@@ -1661,7 +1661,15 @@ function CreatedReportsTab({ projects, currentUser }: any) {
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="prose max-w-none whitespace-pre-wrap text-gray-700">
-                {selectedReport.content}
+                {(() => {
+                  const sections = (selectedReport as any).sections;
+                  if (Array.isArray(sections) && sections.length > 0) {
+                    const s = sections[0];
+                    const expert = String(s?.expertEdit || "").trim();
+                    return expert.length > 0 ? expert : (s?.aiDraft || "");
+                  }
+                  return (selectedReport as any).content;
+                })()}
               </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
@@ -1719,8 +1727,8 @@ function ReportsTab({ projects, currentUser, users }: any) {
     try {
       setLoading(true);
       const url = filterProjectId 
-        ? api(`/api/reports?projectId=${filterProjectId}`)
-        : api('/api/reports');
+        ? api(`/api/reports?userId=${currentUser.id}&projectId=${filterProjectId}`)
+        : api(`/api/reports?userId=${currentUser.id}`);
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -2038,7 +2046,15 @@ function ReportsTab({ projects, currentUser, users }: any) {
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="prose max-w-none whitespace-pre-wrap text-gray-700">
-                {selectedReport.content}
+                {(() => {
+                  const sections = (selectedReport as any).sections;
+                  if (Array.isArray(sections) && sections.length > 0) {
+                    const s = sections[0];
+                    const expert = String(s?.expertEdit || "").trim();
+                    return expert.length > 0 ? expert : (s?.aiDraft || "");
+                  }
+                  return (selectedReport as any).content;
+                })()}
               </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">

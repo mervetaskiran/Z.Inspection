@@ -20,6 +20,115 @@ const User = mongoose.model('User');
 const Score = require('../models/score'); // Score model (separate file)
 
 /**
+ * ============================================================
+ * AUTH HELPERS (MINIMAL-REFACTOR)
+ * ============================================================
+ * This codebase does not use JWT/sessions; requests typically include `userId`.
+ * We enforce role-based permissions by looking up the user by that id.
+ */
+
+const toObjectIdOrValue = (id) => {
+  if (!id) return null;
+  return isValidObjectId(id) ? new mongoose.Types.ObjectId(id) : id;
+};
+
+const getRoleCategory = (role) => {
+  const r = String(role || '').toLowerCase();
+  if (r.includes('admin')) return 'admin';
+  if (r.includes('viewer')) return 'viewer';
+  // Treat anything else as expert for backward compatibility (e.g., medical-expert)
+  return 'expert';
+};
+
+const getUserIdFromReq = (req) => {
+  return (
+    req?.body?.userId ||
+    req?.query?.userId ||
+    req?.headers?.['x-user-id'] ||
+    req?.headers?.['x-userid'] ||
+    null
+  );
+};
+
+const loadRequestUser = async (req) => {
+  const userId = getUserIdFromReq(req);
+  if (!userId) {
+    const err = new Error('User ID is required for this operation');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const userIdObj = toObjectIdOrValue(userId);
+  const user = await User.findById(userIdObj).select('_id name email role').lean();
+  if (!user) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return {
+    user,
+    userIdObj: user._id,
+    roleCategory: getRoleCategory(user.role)
+  };
+};
+
+const isUserAssignedToProject = async ({ userIdObj, projectIdObj }) => {
+  try {
+    const ProjectAssignment = require('../models/projectAssignment');
+    const assignment = await ProjectAssignment.findOne({
+      projectId: projectIdObj,
+      userId: userIdObj
+    }).select('_id').lean();
+
+    if (assignment) return true;
+  } catch (e) {
+    // ignore; fall back to Project.assignedUsers check
+  }
+
+  const project = await Project.findOne({
+    _id: projectIdObj,
+    assignedUsers: userIdObj
+  }).select('_id').lean();
+
+  return Boolean(project);
+};
+
+const chooseSectionContentForExport = (section) => {
+  const expert = (section?.expertEdit || '').trim();
+  if (expert.length > 0) return expert;
+  return section?.aiDraft || '';
+};
+
+const buildExportMarkdownFromReport = (report) => {
+  // New workflow: sections[]
+  if (Array.isArray(report?.sections) && report.sections.length > 0) {
+    let md = '';
+    md += `> **Note:** This report contains AI-generated draft content and has been reviewed/edited by human experts.\n\n`;
+
+    // If there is a single FULL_REPORT section, export it directly (plus the note above)
+    const single = report.sections.length === 1 ? report.sections[0] : null;
+    if (single && String(single.principle || '').toUpperCase() === 'FULL_REPORT') {
+      md += `${chooseSectionContentForExport(single)}\n`;
+      return md;
+    }
+
+    for (const section of report.sections) {
+      const principle = section?.principle || 'Section';
+      md += `## ${principle}\n\n`;
+      md += `${chooseSectionContentForExport(section)}\n\n`;
+    }
+
+    return md;
+  }
+
+  // Legacy fallback: content
+  const legacy = report?.content || '';
+  if (!legacy) return '';
+  return `> **Note:** This report contains AI-generated draft content and has been reviewed/edited by human experts.\n\n${legacy}\n`;
+};
+
+/**
  * Helper function to collect all analysis data for a project
  */
 async function collectAnalysisData(projectId) {
@@ -103,7 +212,12 @@ async function collectAnalysisData(projectId) {
  */
 exports.generateReport = async (req, res) => {
   try {
-    const { projectId, userId } = req.body;
+    const { projectId } = req.body;
+
+    const { user, userIdObj, roleCategory } = await loadRequestUser(req);
+    if (roleCategory !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can generate reports.' });
+    }
 
     if (!projectId) {
       return res.status(400).json({ error: 'Project ID is required' });
@@ -135,16 +249,24 @@ exports.generateReport = async (req, res) => {
     };
 
     // Save report to database
-    const userIdObj = userId && isValidObjectId(userId)
-      ? new mongoose.Types.ObjectId(userId)
-      : null;
+    // Save report to database as DRAFT (AI output is not final)
+    const projectIdObj = isValidObjectId(projectId)
+      ? new mongoose.Types.ObjectId(projectId)
+      : projectId;
 
     const report = new Report({
-      projectId: isValidObjectId(projectId)
-        ? new mongoose.Types.ObjectId(projectId)
-        : projectId,
+      projectId: projectIdObj,
+      useCaseId: projectIdObj,
       title: `Analysis Report - ${analysisData.project.title || 'Project'}`,
+      // Legacy compatibility
       content: reportContent,
+      // New workflow payload
+      sections: [{
+        principle: 'FULL_REPORT',
+        aiDraft: reportContent,
+        expertEdit: '',
+        comments: []
+      }],
       generatedBy: userIdObj,
       metadata,
       status: 'draft'
@@ -178,7 +300,7 @@ exports.generateReport = async (req, res) => {
 
         if (assignedUserIds.length > 0) {
           const projectTitle = analysisData.project.title || 'Project';
-          const notificationText = `[NOTIFICATION] A new report has been generated for project "${projectTitle}". You can view it in the Reports section.`;
+          const notificationText = `[NOTIFICATION] A new report draft has been generated for project "${projectTitle}". You can review it in the Reports section.`;
           
           const projectIdObj = isValidObjectId(projectId)
             ? new mongoose.Types.ObjectId(projectId)
@@ -211,7 +333,8 @@ exports.generateReport = async (req, res) => {
       report: {
         id: report._id,
         title: report.title,
-        content: report.content,
+        content: report.content, // legacy
+        sections: report.sections,
         generatedAt: report.generatedAt,
         metadata: report.metadata,
         status: report.status
@@ -253,6 +376,10 @@ exports.generateReport = async (req, res) => {
 exports.getAllReports = async (req, res) => {
   try {
     const { projectId, status } = req.query;
+    const { roleCategory } = await loadRequestUser(req);
+    if (roleCategory !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can list all reports.' });
+    }
 
     const query = {};
     if (projectId) {
@@ -284,6 +411,7 @@ exports.getAllReports = async (req, res) => {
 exports.getReportById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userIdObj, roleCategory } = await loadRequestUser(req);
 
     const report = await Report.findById(id)
       .populate('projectId', 'title description')
@@ -294,10 +422,22 @@ exports.getReportById = async (req, res) => {
       return res.status(404).json({ error: 'Report not found' });
     }
 
+    // Authorization: admin can view all. Expert/Viewer can only view reports for assigned projects.
+    if (roleCategory !== 'admin') {
+      const projectIdObj = report?.projectId?._id || report?.projectId;
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(projectIdObj)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to view this report.' });
+      }
+    }
+
     res.json(report);
   } catch (err) {
     console.error('Error fetching report:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 };
 
@@ -309,6 +449,11 @@ exports.updateReport = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, title } = req.body;
+    const { roleCategory } = await loadRequestUser(req);
+
+    if (roleCategory !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can update report metadata.' });
+    }
 
     const update = {};
     if (status) update.status = status;
@@ -338,6 +483,11 @@ exports.updateReport = async (req, res) => {
 exports.deleteReport = async (req, res) => {
   try {
     const { id } = req.params;
+    const { roleCategory } = await loadRequestUser(req);
+
+    if (roleCategory !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can delete reports.' });
+    }
 
     const deleted = await Report.findByIdAndDelete(id);
 
@@ -358,26 +508,31 @@ exports.deleteReport = async (req, res) => {
  */
 exports.getMyReports = async (req, res) => {
   try {
-    const { userId } = req.query;
+    const { userIdObj } = await loadRequestUser(req);
 
-    if (!userId) {
-      return res.status(400).json({ error: 'User ID is required' });
+    // Find all projects where user is assigned (ProjectAssignment is the primary source)
+    let projectIds = [];
+
+    try {
+      const ProjectAssignment = require('../models/projectAssignment');
+      const assignments = await ProjectAssignment.find({ userId: userIdObj })
+        .select('projectId')
+        .lean();
+      projectIds = assignments.map(a => a.projectId);
+    } catch (e) {
+      // ignore
     }
 
-    const userIdObj = isValidObjectId(userId)
-      ? new mongoose.Types.ObjectId(userId)
-      : userId;
+    // Fallback: Project.assignedUsers
+    const projects = await Project.find({ assignedUsers: userIdObj }).select('_id title').lean();
+    projectIds = Array.from(new Set([
+      ...projectIds.map(String),
+      ...projects.map(p => String(p._id))
+    ])).map(id => new mongoose.Types.ObjectId(id));
 
-    // Find all projects where user is assigned
-    const projects = await Project.find({
-      assignedUsers: userIdObj
-    }).select('_id title').lean();
-
-    if (projects.length === 0) {
+    if (projectIds.length === 0) {
       return res.json([]);
     }
-
-    const projectIds = projects.map(p => p._id);
 
     // Find all reports for these projects
     const reports = await Report.find({
@@ -402,6 +557,7 @@ exports.getMyReports = async (req, res) => {
 exports.downloadReportPDF = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userIdObj, roleCategory } = await loadRequestUser(req);
 
     const report = await Report.findById(id)
       .populate('projectId', 'title')
@@ -411,11 +567,23 @@ exports.downloadReportPDF = async (req, res) => {
       return res.status(404).json({ error: 'Report not found' });
     }
 
+    // Authorization: admin can export all. Expert/Viewer can export assigned reports.
+    if (roleCategory !== 'admin') {
+      const projectIdObj = report?.projectId?._id || report?.projectId;
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(projectIdObj)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to download this report.' });
+      }
+    }
+
     console.log('📄 Generating PDF for report:', id);
 
     // Generate PDF from markdown content
     const pdfBuffer = await generatePDFFromMarkdown(
-      report.content,
+      buildExportMarkdownFromReport(report),
       report.title
     );
 
@@ -429,7 +597,190 @@ exports.downloadReportPDF = async (req, res) => {
     res.send(pdfBuffer);
   } catch (err) {
     console.error('Error generating PDF:', err);
-    res.status(500).json({ error: err.message || 'Failed to generate PDF' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to generate PDF' });
+  }
+};
+
+/**
+ * GET /api/reports/assigned-to-me
+ * Expert/Viewer can list reports for assigned projects. Admin can also use it.
+ */
+exports.getAssignedToMe = async (req, res) => {
+  try {
+    const { userIdObj } = await loadRequestUser(req);
+
+    let projectIds = [];
+    try {
+      const ProjectAssignment = require('../models/projectAssignment');
+      const assignments = await ProjectAssignment.find({ userId: userIdObj })
+        .select('projectId')
+        .lean();
+      projectIds = assignments.map(a => a.projectId);
+    } catch (e) {
+      // ignore
+    }
+
+    const projects = await Project.find({ assignedUsers: userIdObj }).select('_id').lean();
+    projectIds = Array.from(new Set([
+      ...projectIds.map(String),
+      ...projects.map(p => String(p._id))
+    ])).map(id => new mongoose.Types.ObjectId(id));
+
+    if (projectIds.length === 0) return res.json([]);
+
+    const reports = await Report.find({ projectId: { $in: projectIds } })
+      .populate('projectId', 'title')
+      .populate('generatedBy', 'name email')
+      .sort({ generatedAt: -1 })
+      .lean();
+
+    res.json(reports);
+  } catch (err) {
+    console.error('Error fetching assigned reports:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+/**
+ * PATCH /api/reports/:id/sections/:principle/expert-edit
+ * Expert (and Admin) can update expertEdit on a draft report.
+ */
+exports.updateSectionExpertEdit = async (req, res) => {
+  try {
+    const { id, principle } = req.params;
+    const { expertEdit } = req.body;
+    const { userIdObj, roleCategory } = await loadRequestUser(req);
+
+    if (roleCategory === 'viewer') {
+      return res.status(403).json({ error: 'Viewer cannot edit reports.' });
+    }
+
+    const report = await Report.findById(id);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    // Locked after finalize
+    if (report.status === 'final') {
+      return res.status(409).json({ error: 'Report is finalized and locked.' });
+    }
+
+    if (roleCategory !== 'admin') {
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(report.projectId)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to edit this report.' });
+      }
+    }
+
+    const targetPrinciple = decodeURIComponent(principle || '');
+    report.sections = Array.isArray(report.sections) ? report.sections : [];
+
+    let section = report.sections.find(s => s.principle === targetPrinciple);
+    if (!section) {
+      section = { principle: targetPrinciple, aiDraft: '', expertEdit: '', comments: [] };
+      report.sections.push(section);
+    }
+
+    section.expertEdit = String(expertEdit || '');
+
+    await report.save();
+    res.json({ success: true, report: report.toObject() });
+  } catch (err) {
+    console.error('Error updating expert edit:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/reports/:id/sections/:principle/comments
+ * Expert (and Admin) can comment on a draft report.
+ */
+exports.addSectionComment = async (req, res) => {
+  try {
+    const { id, principle } = req.params;
+    const { text } = req.body;
+    const { user, userIdObj, roleCategory } = await loadRequestUser(req);
+
+    if (roleCategory === 'viewer') {
+      return res.status(403).json({ error: 'Viewer cannot comment on reports.' });
+    }
+
+    if (!text || !String(text).trim()) {
+      return res.status(400).json({ error: 'Comment text is required' });
+    }
+
+    const report = await Report.findById(id);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    if (report.status === 'final') {
+      return res.status(409).json({ error: 'Report is finalized and locked.' });
+    }
+
+    if (roleCategory !== 'admin') {
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(report.projectId)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to comment on this report.' });
+      }
+    }
+
+    const targetPrinciple = decodeURIComponent(principle || '');
+    report.sections = Array.isArray(report.sections) ? report.sections : [];
+
+    let section = report.sections.find(s => s.principle === targetPrinciple);
+    if (!section) {
+      section = { principle: targetPrinciple, aiDraft: '', expertEdit: '', comments: [] };
+      report.sections.push(section);
+    }
+
+    section.comments = Array.isArray(section.comments) ? section.comments : [];
+    section.comments.push({
+      userId: userIdObj,
+      userName: user?.name || 'User',
+      text: String(text).trim(),
+      createdAt: new Date()
+    });
+
+    await report.save();
+    res.json({ success: true, report: report.toObject() });
+  } catch (err) {
+    console.error('Error adding comment:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/reports/:id/finalize
+ * Admin-only: marks report as final and locks edits/comments.
+ */
+exports.finalizeReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { roleCategory } = await loadRequestUser(req);
+
+    if (roleCategory !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can finalize reports.' });
+    }
+
+    const report = await Report.findById(id);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    if (report.status === 'final') {
+      return res.json({ success: true, report: report.toObject() });
+    }
+
+    report.status = 'final';
+    report.finalizedAt = new Date();
+    report.version = (report.version || 1) + 1;
+    await report.save();
+
+    res.json({ success: true, report: report.toObject() });
+  } catch (err) {
+    console.error('Error finalizing report:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 };
 

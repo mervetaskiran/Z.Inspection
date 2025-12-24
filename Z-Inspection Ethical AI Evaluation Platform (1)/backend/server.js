@@ -281,14 +281,39 @@ const MessageSchema = new mongoose.Schema({
 MessageSchema.index({ projectId: 1, fromUserId: 1, toUserId: 1, createdAt: -1 });
 const Message = mongoose.model('Message', MessageSchema);
 
-// Report - AI Generated Analysis Reports
+// Report - AI Generated Analysis Reports (with expert review workflow)
+const ReportSectionSchema = new mongoose.Schema({
+  principle: { type: String, required: true },
+  aiDraft: { type: String, default: '' },
+  expertEdit: { type: String, default: '' },
+  comments: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    userName: { type: String },
+    text: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now }
+  }]
+}, { _id: false });
+
 const ReportSchema = new mongoose.Schema({
-  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
+  // Legacy + compatibility: reports are tied to a Project (a.k.a. "use case" in UI)
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
+  // New alias field requested by product language
+  useCaseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', index: true },
+
   title: { type: String, default: 'Analysis Report' },
-  content: { type: String, required: true },
-  generatedAt: { type: Date, default: Date.now },
+
+  // Legacy single-body content (kept for backward compatibility)
+  content: { type: String },
+
+  // New section-based workflow
+  sections: { type: [ReportSectionSchema], default: [] },
+
+  generatedAt: { type: Date, default: Date.now, index: true },
   generatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  status: { type: String, enum: ['draft', 'final', 'archived'], default: 'draft' },
+
+  status: { type: String, enum: ['draft', 'final', 'archived'], default: 'draft', index: true },
+  finalizedAt: { type: Date },
+
   metadata: {
     totalScores: Number,
     totalEvaluations: Number,
@@ -297,8 +322,11 @@ const ReportSchema = new mongoose.Schema({
   },
   version: { type: Number, default: 1 }
 }, { timestamps: true });
+
+// Index for efficient querying
 ReportSchema.index({ projectId: 1, generatedAt: -1 });
 ReportSchema.index({ projectId: 1, status: 1 });
+ReportSchema.index({ useCaseId: 1, generatedAt: -1 });
 const Report = mongoose.model('Report', ReportSchema);
 
 // SharedDiscussion (Shared Area için)
@@ -1931,8 +1959,106 @@ app.get('/api/general-questions/project/:projectId', async (req, res) => {
   }
 });
 
-// Get user progress based on responses collection (updated to use same logic as /projects/:projectId/progress)
+// Get user progress based on responses collection (FAST path)
+// This endpoint is used frequently by the UI and should stay lightweight.
 app.get('/api/user-progress', async (req, res) => {
+  try {
+    const { projectId, userId } = req.query;
+    if (!projectId || !userId) {
+      return res.status(400).json({ error: 'projectId and userId are required' });
+    }
+
+    const Response = require('./models/response');
+    const Question = require('./models/question');
+    const ProjectAssignment = require('./models/projectAssignment');
+
+    const projectIdObj = isValidObjectId(projectId) ? new mongoose.Types.ObjectId(projectId) : projectId;
+    const userIdObj = isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+
+    const assignment = await ProjectAssignment.findOne({ projectId: projectIdObj, userId: userIdObj }).lean();
+    if (!assignment) {
+      return res.json({ progress: 0, answered: 0, total: 0, error: 'No assignment found' });
+    }
+
+    // Prefer assigned questionnaires from assignment; keep it cheap (no DB probing).
+    let assignedQuestionnaireKeys = Array.isArray(assignment.questionnaires) ? assignment.questionnaires.slice() : [];
+    if (!assignedQuestionnaireKeys.includes('general-v1')) {
+      assignedQuestionnaireKeys.unshift('general-v1');
+    }
+
+    // If questionnaires are empty, derive from role (best-effort).
+    if (assignedQuestionnaireKeys.length === 0) {
+      const role = String(assignment.role || '').toLowerCase();
+      const roleMap = {
+        'ethical-expert': 'ethical-expert-v1',
+        'medical-expert': 'medical-expert-v1',
+        'technical-expert': 'technical-expert-v1',
+        'legal-expert': 'legal-expert-v1',
+        'education-expert': 'education-expert-v1',
+      };
+      const roleKey = roleMap[role] || null;
+      assignedQuestionnaireKeys = roleKey ? ['general-v1', roleKey] : ['general-v1'];
+    }
+
+    const totalQuestions = await Question.countDocuments({
+      questionnaireKey: { $in: assignedQuestionnaireKeys }
+    });
+
+    if (totalQuestions === 0) {
+      return res.json({ progress: 0, answered: 0, total: 0, questionnaires: assignedQuestionnaireKeys, responseCount: 0 });
+    }
+
+    const responses = await Response.find({
+      projectId: projectIdObj,
+      userId: userIdObj,
+      questionnaireKey: { $in: assignedQuestionnaireKeys }
+    }).select('questionnaireKey answers').lean();
+
+    const answeredKeys = new Set();
+
+    for (const r of (responses || [])) {
+      const qKey = r.questionnaireKey;
+      const arr = Array.isArray(r.answers) ? r.answers : [];
+      for (const a of arr) {
+        const idKey = a?.questionId ? String(a.questionId) : '';
+        const codeKey = a?.questionCode !== undefined && a?.questionCode !== null ? String(a.questionCode).trim() : '';
+        const key = idKey.length > 0 ? idKey : (codeKey.length > 0 ? `${qKey}:${codeKey}` : '');
+        if (!key || answeredKeys.has(key)) continue;
+
+        let hasAnswer = false;
+        if (a?.answer) {
+          if (a.answer.choiceKey !== null && a.answer.choiceKey !== undefined && a.answer.choiceKey !== '') hasAnswer = true;
+          else if (a.answer.text !== null && a.answer.text !== undefined && String(a.answer.text).trim().length > 0) hasAnswer = true;
+          else if (a.answer.numeric !== null && a.answer.numeric !== undefined) hasAnswer = true;
+          else if (Array.isArray(a.answer.multiChoiceKeys) && a.answer.multiChoiceKeys.length > 0) hasAnswer = true;
+        } else if (a.choiceKey || (a.text && String(a.text).trim().length > 0) || a.numeric !== undefined || (Array.isArray(a.multiChoiceKeys) && a.multiChoiceKeys.length > 0)) {
+          // Backward compatibility: direct fields
+          hasAnswer = true;
+        }
+
+        if (hasAnswer) answeredKeys.add(key);
+      }
+    }
+
+    const answeredCount = answeredKeys.size;
+    const progress = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
+
+    return res.json({
+      progress: Math.max(0, Math.min(100, progress)),
+      answered: answeredCount,
+      total: totalQuestions,
+      questionnaires: assignedQuestionnaireKeys,
+      responseCount: responses.length
+    });
+  } catch (err) {
+    console.error('Error calculating user progress:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get user progress based on responses collection (DEBUG/SYNC path)
+// Heavy diagnostics and auto-repair logic lives here by design.
+app.get('/api/user-progress/debug', async (req, res) => {
   try {
     const { projectId, userId } = req.query;
     if (!projectId || !userId) {
@@ -2061,19 +2187,38 @@ app.get('/api/user-progress', async (req, res) => {
     
     console.log(`📋 Assigned questionnaires: ${assignedQuestionnaireKeys.join(', ')}`);
     
-    // Count total assigned questions
-    const totalQuestions = await Question.countDocuments({
+    // Fetch assigned questions (for total + missing-code reporting + optional sync)
+    const assignedQuestions = await Question.find({
       questionnaireKey: { $in: assignedQuestionnaireKeys }
-    });
-    
+    }).select('_id code questionnaireKey answerType options').lean();
+
+    if (!assignedQuestions || assignedQuestions.length === 0) {
+      return res.json({ progress: 0, answered: 0, total: 0 });
+    }
+
+    // Total should be based on a stable unique identifier. Use question _id to avoid
+    // collisions when questionCode overlaps across questionnaires (e.g., T1/T2).
+    const getQuestionKey = (q) => (q?._id ? String(q._id) : '');
+
+    const totalKeysSet = new Set(assignedQuestions.map(getQuestionKey).filter(Boolean));
+    const totalQuestions = totalKeysSet.size;
+
     if (totalQuestions === 0) {
       return res.json({ progress: 0, answered: 0, total: 0 });
     }
-    
+
     console.log(`📊 Total assigned questions: ${totalQuestions}`);
 
+    const byCode = new Map();
+    const byId = new Map();
+    assignedQuestions.forEach((q) => {
+      const c = q?.code !== undefined && q?.code !== null ? String(q.code).trim() : '';
+      if (c.length > 0) byCode.set(c, q);
+      if (q?._id) byId.set(String(q._id), q);
+    });
+
     // Get responses for all assigned questionnaires
-    const responses = await Response.find({
+    let responses = await Response.find({
       projectId: projectIdObj,
       userId: userIdObj,
       questionnaireKey: { $in: assignedQuestionnaireKeys }
@@ -2088,28 +2233,35 @@ app.get('/api/user-progress', async (req, res) => {
     // - numeric: answer.numeric is not null
     // - multiChoice: answer.multiChoiceKeys exists and has length > 0
     // IMPORTANT: score=0 is valid and should be treated as answered
-    const answeredQuestionCodes = new Set();
     
-    console.log(`🔍 Analyzing ${responses.length} response documents for answered questions...`);
-    
-    responses.forEach((response, responseIndex) => {
+    const countAnsweredFromResponses = (respDocs) => {
+      const answered = new Set();
+
+      console.log(`🔍 Analyzing ${respDocs.length} response documents for answered questions...`);
+
+      respDocs.forEach((response, responseIndex) => {
       console.log(`📋 Response ${responseIndex + 1}: questionnaireKey=${response.questionnaireKey}, answers.length=${response.answers?.length || 0}`);
       
       if (response.answers && Array.isArray(response.answers)) {
         response.answers.forEach((answer, answerIndex) => {
-          if (!answer.questionCode) {
-            console.log(`⚠️ Answer entry ${answerIndex} missing questionCode:`, JSON.stringify(answer));
-            return; // Skip entries without questionCode
+          const idKey = answer?.questionId ? String(answer.questionId) : '';
+          const codeKey = answer?.questionCode !== undefined && answer?.questionCode !== null ? String(answer.questionCode).trim() : '';
+          // Prefer questionId; fallback to questionnaireKey:code if needed
+          const key = idKey.length > 0 ? idKey : (codeKey.length > 0 ? `${response.questionnaireKey}:${codeKey}` : '');
+
+          if (!key) {
+            console.log(`⚠️ Answer entry ${answerIndex} missing questionCode and questionId:`, JSON.stringify(answer));
+            return; // Skip entries without any identifier
           }
           
           // Check if already counted (avoid duplicates)
-          if (answeredQuestionCodes.has(answer.questionCode)) {
-            console.log(`⚠️ Duplicate questionCode detected: ${answer.questionCode}, skipping`);
+          if (answered.has(key)) {
+            console.log(`⚠️ Duplicate answer key detected: ${key}, skipping`);
             return;
           }
           
           // Debug: log the answer structure
-          console.log(`🔍 Checking answer for ${answer.questionCode}:`, {
+          console.log(`🔍 Checking answer for ${key}:`, {
             hasAnswer: !!answer.answer,
             answerType: typeof answer.answer,
             answerValue: answer.answer,
@@ -2153,25 +2305,207 @@ app.get('/api/user-progress', async (req, res) => {
             console.log(`  ✅ Found answer in direct fields (backward compatibility)`);
           }
           else {
-            console.log(`  ❌ answer.answer is null/undefined and no direct answer fields found for ${answer.questionCode}`);
+            console.log(`  ❌ answer.answer is null/undefined and no direct answer fields found for ${key}`);
           }
           
           if (hasAnswer) {
-            answeredQuestionCodes.add(answer.questionCode);
-            console.log(`✅ Counted answered question: ${answer.questionCode} (score: ${answer.score})`);
+            answered.add(key);
+            console.log(`✅ Counted answered question: ${key} (score: ${answer.score})`);
           } else {
-            console.log(`⚠️ Question ${answer.questionCode} not counted as answered`);
+            console.log(`⚠️ Question ${key} not counted as answered`);
           }
         });
       } else {
         console.log(`⚠️ Response ${responseIndex + 1} has no answers array`);
       }
     });
+
+      return answered;
+    };
+
+    let answeredQuestionCodes = countAnsweredFromResponses(responses);
     
     const answeredCount = answeredQuestionCodes.size;
     const progress = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
     
     console.log(`📊 Progress calculation: ${answeredCount}/${totalQuestions} = ${progress}%`);
+
+    /**
+     * If progress isn't 100, attempt a lightweight sync from GeneralQuestionsAnswers -> responses.
+     * This fixes cases where UI saved general answers under _id keys or only in general-questions collection.
+     * We only patch answers where we can confidently map a key to a Question (by code or _id).
+     */
+    const trySyncGeneralAnswersToResponses = async () => {
+      const doc = await GeneralQuestionsAnswers.findOne({
+        projectId: projectIdObj,
+        userId: userIdObj
+      }).lean();
+
+      if (!doc) return { didSync: false, updatedCount: 0 };
+
+      const flatAnswers = doc.answers || {};
+      const flatRisks = doc.risks || {};
+
+      const isValidRisk = (v) => v === 0 || v === 1 || v === 2 || v === 3 || v === 4;
+
+      // Build updates grouped by questionnaireKey -> questionCode
+      const updatesByQuestionnaire = new Map(); // questionnaireKey -> Map(code -> {questionId, answer, score?})
+
+      const resolveQuestion = (key) => byCode.get(String(key).trim()) || byId.get(String(key)) || null;
+
+      const coerceAnswer = (question, value) => {
+        const t = question?.answerType;
+        if (t === 'single_choice') {
+          const v = String(value ?? '');
+          const opt = (question.options || []).find((o) =>
+            o?.key === v ||
+            o?.label?.en === v ||
+            o?.label?.tr === v ||
+            o?.label === v
+          );
+          return { answer: { choiceKey: opt ? opt.key : v }, optionScore: opt?.score };
+        }
+        if (t === 'open_text') {
+          return { answer: { text: String(value ?? '') } };
+        }
+        if (t === 'multi_choice') {
+          const arr = Array.isArray(value) ? value : [value];
+          return { answer: { multiChoiceKeys: arr.map((x) => String(x)) } };
+        }
+        if (t === 'numeric') {
+          const n = Number(value);
+          return { answer: { numeric: Number.isFinite(n) ? n : undefined } };
+        }
+        // fallback: store as text
+        return { answer: { text: typeof value === 'string' ? value : JSON.stringify(value) } };
+      };
+
+      for (const [key, value] of Object.entries(flatAnswers)) {
+        const q = resolveQuestion(key);
+        if (!q || !q.questionnaireKey) continue;
+        if (!assignedQuestionnaireKeys.includes(q.questionnaireKey)) continue;
+
+        const { answer, optionScore } = coerceAnswer(q, value);
+
+        // Determine score (prefer risk 0-4; else option score; else undefined so we don't overwrite)
+        const qCodeTrim = q.code !== undefined && q.code !== null ? String(q.code).trim() : '';
+        const qKey = String(q._id);
+
+        const riskVal =
+          (qCodeTrim.length > 0 ? flatRisks[qCodeTrim] : undefined) ??
+          flatRisks[String(q._id)] ??
+          flatRisks[key];
+
+        let scoreToSet = undefined;
+        if (isValidRisk(riskVal)) scoreToSet = riskVal;
+        else if (typeof optionScore === 'number') scoreToSet = optionScore;
+
+        if (!updatesByQuestionnaire.has(q.questionnaireKey)) {
+          updatesByQuestionnaire.set(q.questionnaireKey, new Map());
+        }
+        updatesByQuestionnaire.get(q.questionnaireKey).set(qKey, {
+          questionId: q._id,
+          questionCode: qKey,
+          answer,
+          score: scoreToSet
+        });
+      }
+
+      if (updatesByQuestionnaire.size === 0) return { didSync: false, updatedCount: 0 };
+
+      let updatedCount = 0;
+
+      for (const [questionnaireKey, updatesMap] of updatesByQuestionnaire.entries()) {
+        const responseDoc = await Response.findOne({
+          projectId: projectIdObj,
+          userId: userIdObj,
+          questionnaireKey
+        });
+
+        if (!responseDoc) continue;
+
+        let changed = false;
+        responseDoc.answers = Array.isArray(responseDoc.answers) ? responseDoc.answers : [];
+
+        // Update existing entries
+        responseDoc.answers = responseDoc.answers.map((a) => {
+          const aKey = a?.questionId ? String(a.questionId) : '';
+
+          if ((!a.questionCode || String(a.questionCode).trim().length === 0) && a?.questionId) {
+            // Repair empty questionCode to stable value (use questionId string)
+            a.questionCode = String(a.questionId);
+          }
+
+          const upd = aKey ? updatesMap.get(aKey) : null;
+          if (!upd) return a;
+
+          // Only update if we have meaningful content
+          const newAnswer = upd.answer;
+          if (newAnswer && typeof newAnswer === 'object') {
+            a.answer = newAnswer;
+            changed = true;
+          }
+          if (upd.score !== undefined && isValidRisk(upd.score)) {
+            a.score = upd.score;
+            changed = true;
+          }
+          updatedCount++;
+          return a;
+        });
+
+        // Add missing entries (rare)
+        const existingCodes = new Set(
+          responseDoc.answers
+            .map((a) => {
+              return a?.questionId ? String(a.questionId) : '';
+            })
+            .filter(Boolean)
+        );
+        for (const [code, upd] of updatesMap.entries()) {
+          if (existingCodes.has(code)) continue;
+          responseDoc.answers.push({
+            questionId: upd.questionId,
+            questionCode: upd.questionCode,
+            answer: upd.answer,
+            score: isValidRisk(upd.score) ? upd.score : 2,
+            notes: null,
+            evidence: []
+          });
+          changed = true;
+        }
+
+        if (changed) {
+          responseDoc.updatedAt = new Date();
+          await responseDoc.save();
+        }
+      }
+
+      return { didSync: true, updatedCount };
+    };
+
+    // If not complete, try sync once then recount
+    if (progress < 100) {
+      try {
+        const syncResult = await trySyncGeneralAnswersToResponses();
+        if (syncResult.didSync) {
+          responses = await Response.find({
+            projectId: projectIdObj,
+            userId: userIdObj,
+            questionnaireKey: { $in: assignedQuestionnaireKeys }
+          }).select('answers questionnaireKey').lean();
+
+          answeredQuestionCodes = countAnsweredFromResponses(responses);
+        }
+      } catch (syncErr) {
+        console.warn('⚠️ Progress auto-sync skipped due to error:', syncErr.message);
+      }
+    }
+
+    const finalAnsweredCount = answeredQuestionCodes.size;
+    const finalProgress = totalQuestions > 0 ? Math.round((finalAnsweredCount / totalQuestions) * 100) : 0;
+
+    // Missing codes (debug-friendly)
+    const missingQuestionCodes = Array.from(totalKeysSet).filter((k) => !answeredQuestionCodes.has(k));
     
     // Data integrity check: log warning if assigned questions != saved answers
     const savedQuestionCodes = new Set();
@@ -2192,15 +2526,17 @@ app.get('/api/user-progress', async (req, res) => {
     }
 
     // Log detailed progress info for debugging
-    console.log(`📊 Final progress result: ${progress}% (${answeredCount} answered out of ${totalQuestions} total questions)`);
+    console.log(`📊 Final progress result: ${finalProgress}% (${finalAnsweredCount} answered out of ${totalQuestions} total questions)`);
     console.log(`📊 Answered question codes: ${Array.from(answeredQuestionCodes).slice(0, 10).join(', ')}${answeredQuestionCodes.size > 10 ? '...' : ''}`);
 
     res.json({
-      progress: Math.max(0, Math.min(100, progress)),
-      answered: answeredCount,
+      progress: Math.max(0, Math.min(100, finalProgress)),
+      answered: finalAnsweredCount,
       total: totalQuestions,
       questionnaires: assignedQuestionnaireKeys,
-      responseCount: responses.length
+      responseCount: responses.length,
+      missingCount: missingQuestionCodes.length,
+      missingQuestionCodes: missingQuestionCodes.slice(0, 50) // cap for payload safety
     });
   } catch (err) {
     console.error('Error calculating user progress:', err);

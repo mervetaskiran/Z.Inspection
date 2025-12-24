@@ -66,7 +66,10 @@ export function ProjectDetail({
   const [evolutionCompletedAt, setEvolutionCompletedAt] = useState<string | null>(null);
 
   // Calculate assignedUserDetails early to avoid "before initialization" error
-  const assignedUserDetails = users.filter((user) => project.assignedUsers.includes(user.id));
+  const assignedUserDetails = users
+    .filter((user) => project.assignedUsers.includes(user.id))
+    // View Details ekranında use-case-owner'ın bir değerlendirme aksiyonu yok; burada göstermiyoruz
+    .filter((user) => user.role !== 'use-case-owner');
 
   // Find or create a project for communication with a user (UseCaseOwner-Admin mantığı)
   const getCommunicationProject = async (otherUser: User): Promise<Project> => {
@@ -460,8 +463,23 @@ export function ProjectDetail({
   const progressDisplay = Math.max(0, Math.min(100, userProgress));
   
   // Calculate team average progress for display (admin should see team average, not their own 0%)
+  const isProgressContributor = (role?: string) => {
+    const r = String(role || '').toLowerCase();
+    // Exclude non-contributors from "team completion": admin and use-case-owner
+    if (r === 'admin') return false;
+    if (r === 'use-case-owner') return false;
+    if (r === 'usecaseowner') return false;
+    if (r.includes('use-case-owner')) return false;
+    return true;
+  };
+
+  const getContributorProgressValues = () => {
+    const contributors = (assignedUserDetails || []).filter((u: any) => isProgressContributor(u?.role));
+    return contributors.map((u: any) => memberProgresses[u.id] ?? 0);
+  };
+
   const calculateTeamAverageProgress = () => {
-    const progressValues = Object.values(memberProgresses);
+    const progressValues = getContributorProgressValues();
     if (progressValues.length === 0) return 0;
     const sum = progressValues.reduce((acc, val) => acc + val, 0);
     return sum / progressValues.length;
@@ -626,7 +644,7 @@ export function ProjectDetail({
             {currentUser.role === 'admin' && (() => {
               // Calculate team average progress for admin
               const calculateTeamAverageProgress = () => {
-                const progressValues = Object.values(memberProgresses);
+                const progressValues = getContributorProgressValues();
                 if (progressValues.length === 0) return 0;
                 const sum = progressValues.reduce((acc, val) => acc + val, 0);
                 return sum / progressValues.length;
@@ -688,15 +706,7 @@ export function ProjectDetail({
           <h4 className="text-sm font-medium text-gray-700 mb-3">Assigned Members</h4>
           <div className="space-y-2">
             {assignedUserDetails.length > 0 ? (
-              assignedUserDetails
-                .filter((u) => {
-                  // Admin hariç diğer uzmanlar use-case-owner'ı göremez
-                  if (u.role === 'use-case-owner' && currentUser.role !== 'admin') {
-                    return false;
-                  }
-                  return true;
-                })
-                .map((u) => {
+              assignedUserDetails.map((u) => {
                   // All roles can contact assigned members (except themselves)
                   // Only use-case-owner has restriction: can only contact admin
                   const canContact = u.id !== currentUser.id && 
@@ -775,7 +785,7 @@ export function ProjectDetail({
             {activeTab === 'evaluation' && (() => {
               // Calculate average progress for admin view
               const calculateAverageProgress = () => {
-                const progressValues = Object.values(memberProgresses);
+                const progressValues = getContributorProgressValues();
                 if (progressValues.length === 0) return 0;
                 const sum = progressValues.reduce((acc, val) => acc + val, 0);
                 return sum / progressValues.length;
