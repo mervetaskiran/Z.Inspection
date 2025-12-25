@@ -81,7 +81,8 @@ const UserSchema = new mongoose.Schema({
   lastSeen: { type: Date, default: Date.now },
   preconditionApproved: { type: Boolean, default: false },
   preconditionApprovedAt: { type: Date },
-  profileImage: { type: String } // Base64 image
+  profileImage: { type: String }, // Base64 image
+  isVerified: { type: Boolean, default: false }
 });
 // Index for faster login queries
 UserSchema.index({ email: 1, password: 1, role: 1 });
@@ -2945,6 +2946,181 @@ app.get('/projects/:projectId/progress', async (req, res) => {
 });
 
 // General Routes
+
+// Email verification code generation helper
+function generateCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// POST /api/auth/request-code - User requests code for registration
+app.post('/api/auth/request-code', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email address is required.' });
+    }
+
+    // If a user with this email already exists, return error
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'An account with this email address already exists.' });
+    }
+
+    // Delete old verification records for the same email if any
+    const EmailVerification = require('./models/EmailVerification');
+    await EmailVerification.deleteMany({ email });
+
+    // Generate 6-digit code
+    const code = generateCode();
+
+    // Create record in EmailVerification collection
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minutes validity
+
+    const emailVerification = new EmailVerification({
+      email,
+      code,
+      expiresAt,
+      isUsed: false
+    });
+    await emailVerification.save();
+
+    // Send email to user
+    // Check if email credentials are configured
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn('⚠️  Email credentials not configured.');
+      console.log(`🔑 Verification code for ${email}: ${code} (Check server console)`);
+      
+      // Return success message but don't show code in response
+      return res.json({ 
+        message: 'Verification code has been sent to your email address.' 
+      });
+    }
+
+    try {
+      const transporter = require('./config/mailer');
+      
+      // Debug: Log email configuration (without showing password)
+      console.log(`📧 Attempting to send email to: ${email}`);
+      console.log(`📧 From: ${process.env.EMAIL_USER}`);
+      console.log(`📧 Email credentials configured: ${!!process.env.EMAIL_USER && !!process.env.EMAIL_PASS}`);
+      
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Email Verification Code',
+        html: `
+          <p>Hello,</p>
+          <p>Your verification code for Z-Inspection platform registration:</p>
+          <h2>${code}</h2>
+          <p>This code is valid for 10 minutes.</p>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent successfully to: ${email}`);
+      res.json({ message: 'Verification code has been sent to your email address.' });
+    } catch (emailError) {
+      console.error('❌ Email sending error:', emailError.message);
+      console.error('❌ Error code:', emailError.code);
+      if (emailError.response) {
+        console.error('❌ SMTP response:', emailError.response);
+      }
+      console.log(`🔑 Verification code for ${email}: ${code} (Check server console)`);
+      
+      // Return detailed error message for debugging
+      const errorMessage = emailError.message || 'Failed to send verification email';
+      return res.status(500).json({ 
+        message: `Failed to send verification email: ${errorMessage}` 
+      });
+    }
+  } catch (err) {
+    console.error('request-code error:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// POST /api/auth/verify-code-and-register - User verifies code and registers
+app.post('/api/auth/verify-code-and-register', async (req, res) => {
+  try {
+    const { email, code, name, password, role } = req.body;
+
+    if (!email || !code || !name || !password || !role) {
+      return res.status(400).json({ message: 'All fields are required.' });
+    }
+
+    const EmailVerification = require('./models/EmailVerification');
+
+    // Find valid record in EmailVerification collection
+    const emailVerification = await EmailVerification.findOne({
+      email,
+      code,
+      isUsed: false,
+      expiresAt: { $gt: new Date() } // Not expired
+    });
+
+    if (!emailVerification) {
+      return res.status(400).json({ message: 'Code is invalid or expired.' });
+    }
+
+    // Check if a user with this email already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'An account with this email already exists.' });
+    }
+
+    // Create new user in User collection (password not hashed, plain text in current system)
+    const newUser = new User({
+      name,
+      email,
+      password, // Password is not hashed in current system, stored as plain text
+      role,
+      isVerified: true
+    });
+    await newUser.save();
+
+    // Mark EmailVerification record as used
+    emailVerification.isUsed = true;
+    await emailVerification.save();
+
+    // Send welcome email (non-blocking, log error if fails but don't fail registration)
+    try {
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        const transporter = require('./config/mailer');
+        const mailOptions = {
+          from: process.env.EMAIL_USER,
+          to: email,
+          subject: 'Welcome to Z-Inspection Platform',
+          html: `
+            <p>Hello ${name},</p>
+            <p>Welcome to Z-Inspection Ethical AI Evaluation Platform.</p>
+            <p>You can now sign in with your account and start adding your projects.</p>
+          `
+        };
+        await transporter.sendMail(mailOptions);
+      } else {
+        console.warn('Welcome email not sent: Email credentials not configured');
+      }
+    } catch (emailError) {
+      console.error('Welcome email sending error (non-blocking):', emailError);
+      // Don't fail registration if welcome email fails
+    }
+
+    // Remove password from response
+    const userObj = newUser.toObject();
+    delete userObj.password;
+
+    res.json({
+      message: 'Registration completed successfully.',
+      userId: newUser._id.toString()
+    });
+  } catch (err) {
+    console.error('verify-code-and-register error:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 app.post('/api/register', async (req, res) => {
   try {
     const newUser = new User(req.body);
@@ -3826,5 +4002,16 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime()
   });
 });
+
+// Check if email credentials are loaded (for debugging)
+const emailConfigured = !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+console.log(`📧 Email service: ${emailConfigured ? '✅ Configured' : '⚠️  Not configured'}`);
+if (emailConfigured) {
+  console.log(`📧 Email user: ${process.env.EMAIL_USER}`);
+  console.log(`📧 Email pass: ${process.env.EMAIL_PASS ? '***' + process.env.EMAIL_PASS.slice(-4) : 'NOT SET'}`);
+} else {
+  console.log(`⚠️  EMAIL_USER or EMAIL_PASS not found in .env file`);
+  console.log(`⚠️  Please check backend/.env file exists and contains EMAIL_USER and EMAIL_PASS`);
+}
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

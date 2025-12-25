@@ -6,6 +6,8 @@ interface LoginScreenProps {
   onLogin: (email: string, password: string, role: string) => Promise<void> | void;
 }
 
+type Step = 'email' | 'code';
+
 const roleColors = {
   admin: '#1F2937',
   'ethical-expert': '#1E40AF',
@@ -24,61 +26,125 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [role, setRole] = useState<string>('admin');
   const [loading, setLoading] = useState(false);
 
-  // Login + Register birleşik handleSubmit
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Step state for registration flow
+  const [step, setStep] = useState<Step>('email');
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Login handleSubmit
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Form validasyonu
+    // Form validation
     if (!email || !password || !role) {
-      alert('Lütfen tüm alanları doldurun.');
+      setError('Please fill in all fields.');
       return;
     }
 
-    if (isLogin) {
-      // Giriş işlemi (App.tsx'teki handleLogin tetiklenir)
+    setError(null);
       setLoading(true);
       try {
         await onLogin(email, password, role);
       } catch (error) {
         console.error('Login error:', error);
+      setError('Login failed. Please check your information.');
       } finally {
         setLoading(false);
       }
-    } else {
-      // Kayıt olma işlemi
-      if (!name) {
-        alert('Lütfen adınızı girin.');
+  };
+
+  // Registration - Step 1: Send code
+  const handleRequestCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!name || !email || !password || !role) {
+      setError('Please fill in all fields.');
         return;
       }
       
+    setError(null);
+    setLoading(true);
       try {
-        const response = await fetch(api('/api/register'), {
+      const response = await fetch(api('/api/auth/request-code'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setStep('code');
+        setSuccess('Verification code has been sent to your email address. Please check your inbox.');
+        setTimeout(() => setSuccess(null), 5000);
+      } else {
+        const data = await response.json().catch(() => ({ message: 'An error occurred.' }));
+        setError(data.message || 'An error occurred while sending the code.');
+      }
+    } catch (error) {
+      console.error('Code sending error:', error);
+      setError("Could not connect to server. Please make sure the backend is running.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Registration - Step 2: Verify code and register
+  const handleVerifyCodeAndRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!code || code.length !== 6) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    try {
+      const response = await fetch(api('/api/auth/verify-code-and-register'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name: name,
-            email: email,
-            password: password,
-            role: role
+          email,
+          code,
+          name,
+          password,
+          role
           })
         });
 
         if (response.ok) {
-          alert('Kayıt başarılı! Şimdi giriş yapabilirsiniz.');
-          setIsLogin(true); // Giriş ekranına dön
-          // Formu temizle
+        const data = await response.json();
+        setSuccess('Registration completed successfully! You can now sign in.');
+        // Clear form and return to login screen
+        setTimeout(() => {
+          setIsLogin(true);
+          setStep('email');
           setName('');
           setEmail('');
           setPassword('');
+          setCode('');
+          setSuccess(null);
+        }, 2000);
         } else {
-          const errorData = await response.json().catch(() => ({}));
-          alert('Kayıt hatası: ' + (errorData.message || 'Bilinmeyen hata'));
+        const data = await response.json().catch(() => ({ message: 'An error occurred.' }));
+        setError(data.message || 'Registration failed. Please check your information.');
         }
       } catch (error) {
-        console.error('Kayıt hatası:', error);
-        alert("Sunucuya bağlanılamadı. Backend'in açık olduğundan emin olun.");
-      }
+      console.error('Registration error:', error);
+      setError("Could not connect to server. Please make sure the backend is running.");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // Clear state when leaving registration screen
+  const handleToggleLogin = () => {
+    setIsLogin(!isLogin);
+    setStep('email');
+    setError(null);
+    setSuccess(null);
+    setCode('');
   };
 
   const demoCredentials = [
@@ -102,16 +168,101 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </div>
 
           <div className="mb-6">
-            <h2 className="text-2xl mb-2">{isLogin ? 'Sign In' : 'Create Account'}</h2>
+            <h2 className="text-2xl mb-2">
+              {isLogin 
+                ? 'Sign In' 
+                : step === 'email' 
+                  ? 'Create Account' 
+                  : 'Verify Email'}
+            </h2>
             <p className="text-gray-600">
               {isLogin
                 ? 'Welcome back! Please sign in to continue.'
-                : 'Join the ethical AI evaluation platform.'}
+                : step === 'email'
+                  ? 'Join the ethical AI evaluation platform.'
+                  : 'Please enter the verification code sent to your email.'}
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {!isLogin && (
+          {/* Error and success messages */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+              {success}
+            </div>
+          )}
+
+          {isLogin ? (
+            // LOGIN FORM
+            <form onSubmit={handleLoginSubmit} className="space-y-6">
+              <div>
+                <label className="block text-sm mb-2 text-gray-700">Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter your email"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-2 text-gray-700">Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter your password"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-2 text-gray-700">Role</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{
+                    color: roleColors[role as keyof typeof roleColors] || '#111827'
+                  }}
+                >
+                  <option value="admin">Admin</option>
+                  <option value="ethical-expert">Ethical Expert</option>
+                  <option value="medical-expert">Medical Expert</option>
+                  <option value="use-case-owner">Use Case Expert</option>
+                  <option value="education-expert">Education Expert</option>
+                  <option value="technical-expert">Technical Expert</option>
+                  <option value="legal-expert">Legal Expert</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: roleColors[role as keyof typeof roleColors] || '#1F2937'
+                }}
+              >
+                {loading ? 'Loading...' : 'Sign In'}
+              </button>
+            </form>
+          ) : step === 'email' ? (
+            // REGISTER STEP 1: Email/User Info
+            <form onSubmit={handleRequestCode} className="space-y-6">
               <div>
                 <label className="block text-sm mb-2 text-gray-700">Full Name</label>
                 <div className="relative">
@@ -126,7 +277,6 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                   />
                 </div>
               </div>
-            )}
 
             <div>
               <label className="block text-sm mb-2 text-gray-700">Email</label>
@@ -186,13 +336,64 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                 backgroundColor: roleColors[role as keyof typeof roleColors] || '#1F2937'
               }}
             >
-              {loading ? 'Loading...' : (isLogin ? 'Sign In' : 'Create Account')}
+                {loading ? 'Loading...' : 'Continue / Send Code'}
+              </button>
+            </form>
+          ) : (
+            // REGISTER STEP 2: Code Verification
+            <form onSubmit={handleVerifyCodeAndRegister} className="space-y-6">
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+                <p className="font-medium mb-1">Code sent!</p>
+                <p>Enter the 6-digit verification code sent to your email address: <strong>{email}</strong></p>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-2 text-gray-700">Verification Code</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setCode(value);
+                    }}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest"
+                    placeholder="000000"
+                    maxLength={6}
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: roleColors[role as keyof typeof roleColors] || '#1F2937'
+                }}
+              >
+                {loading ? 'Loading...' : 'Register / Verify'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('email');
+                  setCode('');
+                  setError(null);
+                }}
+                className="w-full py-2 px-4 text-gray-600 hover:text-gray-800 text-sm"
+              >
+                ← Go back
             </button>
           </form>
+          )}
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={handleToggleLogin}
               className="text-blue-600 hover:underline"
             >
               {isLogin
