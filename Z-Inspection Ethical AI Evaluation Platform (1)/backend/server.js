@@ -4005,13 +4005,19 @@ app.get('/api/health', (req, res) => {
 
 // Check if email credentials are loaded (for debugging)
 const emailConfigured = !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+const isProduction = process.env.NODE_ENV === 'production';
 console.log(`📧 Email service: ${emailConfigured ? '✅ Configured' : '⚠️  Not configured'}`);
 if (emailConfigured) {
   console.log(`📧 Email user: ${process.env.EMAIL_USER}`);
   console.log(`📧 Email pass: ${process.env.EMAIL_PASS ? '***' + process.env.EMAIL_PASS.slice(-4) : 'NOT SET'}`);
 } else {
-  console.log(`⚠️  EMAIL_USER or EMAIL_PASS not found in .env file`);
-  console.log(`⚠️  Please check backend/.env file exists and contains EMAIL_USER and EMAIL_PASS`);
+  if (isProduction) {
+    console.log(`⚠️  EMAIL_USER or EMAIL_PASS not found in environment variables`);
+    console.log(`⚠️  Please configure EMAIL_USER and EMAIL_PASS in Railway environment variables`);
+  } else {
+    console.log(`⚠️  EMAIL_USER or EMAIL_PASS not found in .env file`);
+    console.log(`⚠️  Please check backend/.env file exists and contains EMAIL_USER and EMAIL_PASS`);
+  }
 }
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

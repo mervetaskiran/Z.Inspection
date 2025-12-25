@@ -32,12 +32,16 @@ Railway en kolay ve hızlı deployment seçeneğidir.
 2. **Backend Service Oluştur**
    - "New Service" → "GitHub Repo"
    - Root directory: `backend` olarak ayarlayın
-   - Environment Variables ekleyin:
+   - Environment Variables ekleyin (Railway Dashboard → Variables sekmesi):
      ```
-     MONGO_URI=mongodb+srv://admin_merve:Sifre123@cluster0.tg8voq1.mongodb.net/zinspection?retryWrites=true&w=majority&appName=Cluster0
+     MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/zinspection?retryWrites=true&w=majority
      PORT=5000
      NODE_ENV=production
+     EMAIL_USER=your-email@gmail.com
+     EMAIL_PASS=your-gmail-app-password
+     GEMINI_API_KEY=your-gemini-api-key
      ```
+   - **Önemli**: Railway otomatik olarak `PORT` environment variable'ını ayarlar, ancak manuel ekleyebilirsiniz
    - Deploy başlayacak
 
 3. **Backend URL'ini Al**
@@ -107,11 +111,28 @@ Render.com da ücretsiz tier sunuyor ve kullanımı kolaydır.
 ## 🔧 Environment Variables Listesi
 
 ### Backend (.env veya Railway/Render Environment Variables)
+
+**Zorunlu Variables:**
 ```
 MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/z-inspection?retryWrites=true&w=majority
-PORT=5000
 NODE_ENV=production
 ```
+
+**Email Configuration (E-posta gönderimi için):**
+```
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-gmail-app-password-16-digits
+```
+
+**Optional Variables:**
+```
+PORT=5000
+GEMINI_API_KEY=your-gemini-api-key
+SERVER_URL=https://your-backend-url.railway.app
+CLIENT_URL=https://your-frontend-url.railway.app
+```
+
+**Not**: Railway otomatik olarak `PORT` environment variable'ını ayarlar. Manuel eklemeniz gerekmez, ama ekleyebilirsiniz.
 
 ### Frontend (Build-time variables - VITE_ prefix ile)
 ```
@@ -186,4 +207,5 @@ app.get('/api/health', (req, res) => {
 - Node.js versiyonunu kontrol edin (package.json'da belirtilen)
 - Dependencies'lerin yüklendiğinden emin olun
 - Build loglarını detaylı inceleyin
+
 
