@@ -180,8 +180,14 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
         if (response.ok) {
           const allQuestions = await response.json();
           // Merge questions with answers
+          // Support both questionId matching by id and key for backward compatibility
           const questionsWithAnswers = allQuestions.map((q: any) => {
-            const answer = uc.answers?.find((a: any) => a.questionId === q.id);
+            const answer = uc.answers?.find((a: any) => 
+              a.questionId === q.id || 
+              a.questionId === q._id?.toString() || 
+              (a.questionKey && a.questionKey === q.key) ||
+              (q.key && a.questionId === q.key)
+            );
             return {
               ...q,
               answer: answer?.answer || ''
@@ -444,16 +450,36 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
                 <h3 className="text-lg text-gray-900 mb-4">Questions & Answers</h3>
                 <div className="space-y-6">
                   {questions.map((q) => (
-                    <div key={q.id} className="border-b border-gray-100 pb-4 last:border-b-0">
-                      <div className="text-sm font-medium text-gray-900 mb-2">
-                        {q.questionEn}
+                    <div key={q.id || q._id} className="border-b border-gray-100 pb-4 last:border-b-0">
+                      {/* Tag badge */}
+                      {q.tag && (
+                        <div className="mb-2">
+                          <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">
+                            {q.tag}
+                          </span>
+                        </div>
+                      )}
+                      {/* Question text - English (bold) on top, Turkish (muted) below */}
+                      <div className="mb-2">
+                        <div className="text-sm font-bold text-gray-900">
+                          {q.questionEn}
+                        </div>
                         {q.questionTr && (
-                          <span className="block text-xs text-gray-500 mt-1 font-normal">{q.questionTr}</span>
+                          <div className="text-sm text-gray-500 mt-1">
+                            {q.questionTr}
+                          </div>
                         )}
                       </div>
+                      {/* Answer */}
                       <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg mt-2">
                         {q.answer || <span className="text-gray-400 italic">No answer provided</span>}
                       </div>
+                      {/* Helper text (shown when no answer or as hint) */}
+                      {q.helper && !q.answer && (
+                        <div className="text-xs text-gray-400 mt-1 italic">
+                          {q.helper}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

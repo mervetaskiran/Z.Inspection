@@ -309,14 +309,6 @@ export function UseCaseOwnerDashboard({
     }
   };
 
-  // ⭐ TEMPLATE DOWNLOAD FUNCTION
-  const handleDownloadTemplate = () => {
-    const link = document.createElement("a");
-    link.href = "/templates/usecase-template.docx"; 
-    link.download = "usecase-template.docx";
-    link.click();
-  };
-
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
 
@@ -479,25 +471,7 @@ export function UseCaseOwnerDashboard({
           </div>
         </div>
 
-        {/* ⭐ TEMPLATE DOWNLOAD BANNER */}
-        <div className="mx-8 mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
-          <div className="flex items-center">
-            <FileText className="h-5 w-5 text-blue-600 mr-3" />
-            <div>
-              <div className="text-sm text-blue-900">Need help getting started?</div>
-              <div className="text-xs text-blue-700">Download our use case template for guidance</div>
-            </div>
-          </div>
-
-          <button
-            onClick={handleDownloadTemplate}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm flex items-center"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download Template
-          </button>
-        </div>
-                {/* Use Cases Grid */}
+        {/* Use Cases Grid */}
         <div className="px-8 py-6">
           {loadingUseCases ? (
             <div className="flex items-center justify-center py-12">
@@ -739,11 +713,16 @@ type FileAttachment = {
 
 interface UseCaseQuestion {
   id: string;
+  key?: string;
   questionEn: string;
   questionTr: string;
   type: 'text' | 'multiple-choice';
   options?: string[];
   order?: number;
+  tag?: string;
+  placeholder?: string;
+  helper?: string;
+  isActive?: boolean;
 }
 
 function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProps) {
@@ -1176,10 +1155,22 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
             ) : (
             <div className="space-y-6 max-h-[600px] overflow-y-auto pr-2">
               {questions.map((question) => (
-                <div key={question.id} className="border-b border-gray-100 pb-6 last:border-b-0">
-                  <label className="block text-sm font-medium text-gray-900 mb-2">
+                <div key={question.id || question.key} className="border-b border-gray-100 pb-6 last:border-b-0">
+                  {/* Tag badge */}
+                  {question.tag && (
+                    <div className="mb-2">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">
+                        {question.tag}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Question text - English (bold) on top, Turkish (muted) below */}
+                  <label className="block text-sm font-bold text-gray-900 mb-2">
                     {question.questionEn}
-                    <span className="block text-xs text-gray-500 mt-1 font-normal">{question.questionTr}</span>
+                    {question.questionTr && (
+                      <span className="block text-sm text-gray-500 mt-1 font-normal">{question.questionTr}</span>
+                    )}
                   </label>
                   
                   {question.type === 'multiple-choice' && question.options ? (
@@ -1194,12 +1185,20 @@ function NewUseCaseModal({ onClose, onSubmit, currentUser }: NewUseCaseModalProp
                       ))}
                     </select>
                   ) : (
-                    <textarea
-                      value={questionAnswers[question.id] || ''}
-                      onChange={(e) => setQuestionAnswers(prev => ({ ...prev, [question.id]: e.target.value }))}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[100px]"
-                      placeholder="Enter your answer..."
-                    />
+                    <div>
+                      <textarea
+                        value={questionAnswers[question.id] || ''}
+                        onChange={(e) => setQuestionAnswers(prev => ({ ...prev, [question.id]: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[100px]"
+                        placeholder={question.placeholder || "Enter your answer..."}
+                      />
+                      {/* Helper text below textarea */}
+                      {question.helper && (
+                        <p className="mt-1 text-xs text-gray-400 italic">
+                          {question.helper}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}

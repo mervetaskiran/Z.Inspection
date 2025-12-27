@@ -877,6 +877,7 @@ export function ProjectDetail({
                         key={tension.id} 
                         tension={tension}
                         currentUser={currentUser}
+                        users={users}
                         onVote={handleVote}
                         onCommentClick={(t) => onViewTension?.(t)}
                         onDelete={canManageTensions ? handleDeleteTension : undefined}
