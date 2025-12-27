@@ -27,8 +27,12 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
   const [questions, setQuestions] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [isLinkedToProject, setIsLinkedToProject] = useState(false);
+  const [calculatedProgress, setCalculatedProgress] = useState<number>(useCase.progress || 0);
   
-  useEffect(() => setUc(useCase), [useCase]);
+  useEffect(() => {
+    setUc(useCase);
+    setCalculatedProgress(useCase.progress || 0);
+  }, [useCase]);
 
   // When opening details, fetch the full use case doc (list endpoint may omit answers).
   useEffect(() => {
@@ -94,6 +98,79 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
   // Display rule: once a use case is linked to a project, "assigned" should appear as "in-review".
   const displayStatus =
     uc.status === 'assigned' && isLinkedToProject ? 'in-review' : uc.status;
+
+  // Calculate progress from linked project
+  useEffect(() => {
+    const useCaseId = ((uc as any)?.id || (uc as any)?._id || '').toString();
+    if (!useCaseId) return;
+
+    const getProjectUseCaseId = (p: any): string | null => {
+      const val = p?.useCase;
+      if (!val) return null;
+      if (typeof val === 'string') return val;
+      return (val.url || val._id || val.id || val.useCaseId || null) as string | null;
+    };
+
+    const calculateProgress = async () => {
+      try {
+        const res = await fetch(api('/api/projects'));
+        if (!res.ok) {
+          setCalculatedProgress(uc.progress || 0);
+          return;
+        }
+        
+        const allProjects = await res.json();
+        const linkedProject = Array.isArray(allProjects) 
+          ? allProjects.find((p: any) => {
+              const pid = getProjectUseCaseId(p);
+              return pid && pid.toString() === useCaseId;
+            })
+          : null;
+
+        if (!linkedProject || !linkedProject.assignedUsers || linkedProject.assignedUsers.length === 0) {
+          setCalculatedProgress(uc.progress || 0);
+          return;
+        }
+
+        // Calculate average progress from all assigned users
+        const { fetchUserProgress } = await import('../utils/userProgress');
+        const progressPromises = linkedProject.assignedUsers.map(async (userId: string) => {
+          const user = users.find((u: any) => (u.id || (u as any)._id) === userId);
+          if (!user) return 0;
+          
+          try {
+            const progress = await fetchUserProgress(linkedProject, user);
+            return progress;
+          } catch (error) {
+            console.error(`Error fetching progress for user ${userId}:`, error);
+            return 0;
+          }
+        });
+
+        const progressesList = await Promise.all(progressPromises);
+        const validProgresses = progressesList.filter(p => p > 0);
+        
+        if (validProgresses.length > 0) {
+          const average = validProgresses.reduce((sum, p) => sum + p, 0) / validProgresses.length;
+          setCalculatedProgress(Math.round(average));
+        } else {
+          setCalculatedProgress(uc.progress || 0);
+        }
+      } catch (err: any) {
+        console.error('Error calculating progress:', err);
+        setCalculatedProgress(uc.progress || 0);
+      }
+    };
+
+    // Initial calculation
+    calculateProgress();
+
+    // Update progress every 5 seconds
+    const interval = setInterval(calculateProgress, 5000);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(uc as any)?.id, (uc as any)?._id, uc.progress, users]);
 
   // Fetch questions and merge with answers
   useEffect(() => {
@@ -311,7 +388,7 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
             </div>
             <div className="text-right">
               <div className="text-sm text-gray-600 mb-1">Progress</div>
-              <div className="text-3xl text-gray-900">{uc.progress}%</div>
+              <div className="text-3xl text-gray-900">{calculatedProgress}%</div>
             </div>
           </div>
         </div>
@@ -328,10 +405,10 @@ export function UseCaseDetail({ useCase, currentUser, users, onBack }: UseCaseDe
               <div className="w-full bg-gray-200 rounded-full h-4 mb-2">
                 <div
                   className="bg-green-600 h-4 rounded-full transition-all flex items-center justify-end pr-2"
-                  style={{ width: `${useCase.progress}%` }}
+                  style={{ width: `${calculatedProgress}%` }}
                 >
-                  {useCase.progress > 10 && (
-                    <span className="text-xs text-white">{useCase.progress}%</span>
+                  {calculatedProgress > 10 && (
+                    <span className="text-xs text-white">{calculatedProgress}%</span>
                   )}
                 </div>
               </div>

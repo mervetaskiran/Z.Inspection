@@ -29,7 +29,21 @@ const statusColors = {
 const stageLabels = {
   'set-up': 'Set-up',
   assess: 'Assess',
-  resolve: 'Resolve'
+  resolve: 'Resolve / Results'
+};
+
+// Progress'e göre stage belirle
+// 0% → Set-up (henüz sorular çözülmeye başlanmamış)
+// 1-99% → Assess (sorular çözülmeye başlanmış, değerlendirme aşamasında)
+// 100% + rapor varsa → Resolve / Results (tüm sorular çözülmüş ve rapor oluşturulmuş)
+// 100% ama rapor yok → Assess (devam ediyor)
+const getStageFromProgress = (progress: number, hasReport: boolean = false): 'set-up' | 'assess' | 'resolve' => {
+  if (progress === 0) return 'set-up';
+  if (progress < 100) return 'assess';
+  // 100% ama rapor yoksa hala Assess
+  if (progress === 100 && !hasReport) return 'assess';
+  // 100% ve rapor varsa Resolve
+  return 'resolve';
 };
 
 const useCaseStatusColors = {
@@ -46,6 +60,7 @@ const ProjectCard: React.FC<{
   onDeleteProject: (id: string) => void;
 }> = ({ project, currentUser, onViewProject, onStartEvaluation, onDeleteProject }) => {
   const [userProgress, setUserProgress] = useState<number>(project.progress ?? 0);
+  const [hasReport, setHasReport] = useState<boolean>(false);
 
   useEffect(() => {
     let mounted = true;
@@ -67,7 +82,36 @@ const ProjectCard: React.FC<{
     };
   }, [project.id, (project as any)._id, currentUser.id, (currentUser as any)._id]);
 
+  // Check if project has a report
+  useEffect(() => {
+    let mounted = true;
+    const checkReport = async () => {
+      try {
+        const projectId = project.id || (project as any)._id;
+        const response = await fetch(api(`/api/reports?userId=${currentUser.id}&projectId=${projectId}`));
+        if (response.ok) {
+          const reports = await response.json();
+          if (mounted) {
+            setHasReport(Array.isArray(reports) && reports.length > 0);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking reports:', error);
+      }
+    };
+
+    checkReport();
+    // Check reports periodically (every 10 seconds)
+    const interval = setInterval(checkReport, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [project.id, (project as any)._id, currentUser.id]);
+
   const progressDisplay = Math.max(0, Math.min(100, userProgress));
+  // Progress'e göre dinamik stage belirle (rapor kontrolü ile)
+  const currentStage = getStageFromProgress(progressDisplay, hasReport);
 
   return (
     <div
@@ -97,12 +141,9 @@ const ProjectCard: React.FC<{
         </button>
       </div>
 
-      <div className="flex items-center space-x-2 mb-4">
-        <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${statusColors[project.status].bg} ${statusColors[project.status].text}`}>
-          {project.status.toUpperCase()}
-        </span>
-        <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full border border-gray-200">
-          {stageLabels[project.stage]}
+      <div className="mb-4">
+        <span className={`px-3 py-1 text-xs font-medium rounded-full ${statusColors[project.status].bg} ${statusColors[project.status].text}`}>
+          {project.status.toUpperCase()} {stageLabels[currentStage]}
         </span>
       </div>
 
@@ -725,6 +766,7 @@ export function AdminDashboardEnhanced({
             <DashboardTab
               projects={filteredProjects}
               users={users}
+              currentUser={currentUser}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               onViewProject={onViewProject}
@@ -840,9 +882,10 @@ export function AdminDashboardEnhanced({
 // --- SUB COMPONENTS ---
 
 // Project Progress Component - Atanan kullanıcıların progress ortalamasını hesaplar
-function ProjectProgressCard({ project, users, onViewProject, onDeleteProject }: { project: Project; users: User[]; onViewProject: (p: Project) => void; onDeleteProject: (id: string) => void }) {
+function ProjectProgressCard({ project, users, onViewProject, onDeleteProject, currentUser }: { project: Project; users: User[]; onViewProject: (p: Project) => void; onDeleteProject: (id: string) => void; currentUser?: User }) {
   const [averageProgress, setAverageProgress] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
+  const [hasReport, setHasReport] = useState<boolean>(false);
 
   useEffect(() => {
     let mounted = true;
@@ -906,7 +949,38 @@ function ProjectProgressCard({ project, users, onViewProject, onDeleteProject }:
     };
   }, [project.id, (project as any)._id, project.assignedUsers, users]);
 
+  // Check if project has a report
+  useEffect(() => {
+    let mounted = true;
+    if (!currentUser) return;
+
+    const checkReport = async () => {
+      try {
+        const projectId = project.id || (project as any)._id;
+        const response = await fetch(api(`/api/reports?userId=${currentUser.id}&projectId=${projectId}`));
+        if (response.ok) {
+          const reports = await response.json();
+          if (mounted) {
+            setHasReport(Array.isArray(reports) && reports.length > 0);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking reports:', error);
+      }
+    };
+
+    checkReport();
+    // Check reports periodically (every 10 seconds)
+    const interval = setInterval(checkReport, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [project.id, (project as any)._id, currentUser?.id]);
+
   const progressDisplay = Math.max(0, Math.min(100, averageProgress));
+  // Progress'e göre dinamik stage belirle (rapor kontrolü ile)
+  const currentStage = getStageFromProgress(progressDisplay, hasReport);
 
   return (
     <div
@@ -936,12 +1010,9 @@ function ProjectProgressCard({ project, users, onViewProject, onDeleteProject }:
         </button>
       </div>
 
-      <div className="flex items-center space-x-2 mb-4">
-        <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${statusColors[project.status].bg} ${statusColors[project.status].text}`}>
-          {project.status.toUpperCase()}
-        </span>
-        <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full border border-gray-200">
-          {stageLabels[project.stage]}
+      <div className="mb-4">
+        <span className={`px-3 py-1 text-xs font-medium rounded-full ${statusColors[project.status].bg} ${statusColors[project.status].text}`}>
+          {project.status.toUpperCase()} {stageLabels[currentStage]}
         </span>
       </div>
 
@@ -968,7 +1039,7 @@ function ProjectProgressCard({ project, users, onViewProject, onDeleteProject }:
   );
 }
 
-function DashboardTab({ projects, users, searchQuery, setSearchQuery, onViewProject, onCreateNew, onDeleteProject }: any) {
+function DashboardTab({ projects, users, searchQuery, setSearchQuery, onViewProject, onCreateNew, onDeleteProject, currentUser }: any) {
   return (
     <>
       <div className="bg-white border-b border-gray-200 px-8 py-6 flex-shrink-0">
@@ -1004,6 +1075,7 @@ function DashboardTab({ projects, users, searchQuery, setSearchQuery, onViewProj
               key={project.id}
               project={project}
               users={users}
+              currentUser={currentUser}
               onViewProject={onViewProject}
               onDeleteProject={onDeleteProject}
             />
