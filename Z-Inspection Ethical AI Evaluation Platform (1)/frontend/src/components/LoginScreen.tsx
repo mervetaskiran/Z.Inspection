@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, User, CheckCircle2, Users, FileText, BarChart3 } from 'lucide-react';
+import { CheckCircle2, Users, FileText, BarChart3 } from 'lucide-react';
 import { api } from '../api';
 
 interface LoginScreenProps {
@@ -163,19 +163,19 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
       <div className="w-1/2 flex flex-col justify-center px-12 bg-white">
         <div className="max-w-md mx-auto w-full">
           <div className="mb-8">
-            <h1 className="text-3xl mb-2 text-gray-900">Z-Inspection Platform</h1>
-            <p className="text-gray-600">Ethical AI Evaluation System</p>
+            <h1 className="text-4xl mb-2 text-gray-900 font-black">Z-Inspection Platform</h1>
+            <p className="text-base text-gray-600">Ethical AI Evaluation System</p>
           </div>
 
           <div className="mb-6">
-            <h2 className="text-2xl mb-2">
+            <h2 className="text-3xl mb-2 font-black">
               {isLogin 
                 ? 'Sign In' 
                 : step === 'email' 
                   ? 'Create Account' 
                   : 'Verify Email'}
             </h2>
-            <p className="text-gray-600">
+            <p className="text-base text-gray-600">
               {isLogin
                 ? 'Welcome back! Please sign in to continue.'
                 : step === 'email'
@@ -186,73 +186,67 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
           {/* Error and success messages */}
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-base">
               {error}
             </div>
           )}
           {success && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-base">
               {success}
             </div>
           )}
 
-          {isLogin ? (
-            // LOGIN FORM
-            <form onSubmit={handleLoginSubmit} className="space-y-6">
-              <div>
-                <label className="block text-sm mb-2 text-gray-700">Email</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            {isLogin ? (
+              // LOGIN FORM
+              <form onSubmit={handleLoginSubmit} className="space-y-6">
+                <div>
+                  <label className="block text-sm mb-2 text-gray-700 font-semibold">Email</label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 h-12 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 box-border"
                     placeholder="Enter your email"
                     required
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm mb-2 text-gray-700">Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <div>
+                  <label className="block text-sm mb-2 text-gray-700 font-semibold">Password</label>
                   <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 h-12 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 box-border"
                     placeholder="Enter your password"
                     required
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm mb-2 text-gray-700">Role</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{
-                    color: roleColors[role as keyof typeof roleColors] || '#111827'
-                  }}
-                >
-                  <option value="admin">Admin</option>
-                  <option value="ethical-expert">Ethical Expert</option>
-                  <option value="medical-expert">Medical Expert</option>
-                  <option value="use-case-owner">Use Case Expert</option>
-                  <option value="education-expert">Education Expert</option>
-                  <option value="technical-expert">Technical Expert</option>
-                  <option value="legal-expert">Legal Expert</option>
-                </select>
-              </div>
+                <div>
+                  <label className="block text-sm mb-2 text-gray-700 font-semibold">Role</label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="w-full px-4 h-12 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 box-border"
+                    style={{
+                      color: roleColors[role as keyof typeof roleColors] || '#111827'
+                    }}
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="ethical-expert">Ethical Expert</option>
+                    <option value="medical-expert">Medical Expert</option>
+                    <option value="use-case-owner">Use Case Expert</option>
+                    <option value="education-expert">Education Expert</option>
+                    <option value="technical-expert">Technical Expert</option>
+                    <option value="legal-expert">Legal Expert</option>
+                  </select>
+                </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium text-base disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   backgroundColor: roleColors[role as keyof typeof roleColors] || '#1F2937'
                 }}
@@ -264,56 +258,47 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             // REGISTER STEP 1: Email/User Info
             <form onSubmit={handleRequestCode} className="space-y-6">
               <div>
-                <label className="block text-sm mb-2 text-gray-700">Full Name</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter your full name"
-                    required
-                  />
-                </div>
-              </div>
-
-            <div>
-              <label className="block text-sm mb-2 text-gray-700">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <label className="block text-sm mb-2 text-gray-700 font-semibold">Full Name</label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your email"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 h-12 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 box-border"
+                  placeholder="Enter your full name"
                   required
                 />
               </div>
+
+            <div>
+              <label className="block text-sm mb-2 text-gray-700 font-semibold">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 h-12 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 box-border"
+                placeholder="Enter your email"
+                required
+              />
             </div>
 
             <div>
-              <label className="block text-sm mb-2 text-gray-700">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your password"
-                  required
-                />
-              </div>
+              <label className="block text-sm mb-2 text-gray-700 font-semibold">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 h-12 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 box-border"
+                placeholder="Enter your password"
+                required
+              />
             </div>
 
             <div>
-              <label className="block text-sm mb-2 text-gray-700">Role</label>
+              <label className="block text-sm mb-2 text-gray-700 font-semibold">Role</label>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 h-12 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 box-border"
                 style={{
                   color: roleColors[role as keyof typeof roleColors] || '#111827'
                 }}
@@ -331,7 +316,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium text-base disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 backgroundColor: roleColors[role as keyof typeof roleColors] || '#1F2937'
               }}
@@ -342,34 +327,31 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           ) : (
             // REGISTER STEP 2: Code Verification
             <form onSubmit={handleVerifyCodeAndRegister} className="space-y-6">
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-base">
                 <p className="font-medium mb-1">Code sent!</p>
                 <p>Enter the 6-digit verification code sent to your email address: <strong>{email}</strong></p>
               </div>
 
               <div>
-                <label className="block text-sm mb-2 text-gray-700">Verification Code</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                      setCode(value);
-                    }}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest"
-                    placeholder="000000"
-                    maxLength={6}
-                    required
-                  />
-                </div>
+                <label className="block text-sm mb-2 text-gray-700 font-semibold">Verification Code</label>
+                <input
+                  type="text"
+                  value={code}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setCode(value);
+                  }}
+                  className="w-full px-4 h-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-2xl tracking-widest box-border"
+                  placeholder="000000"
+                  maxLength={6}
+                  required
+                />
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3 px-4 rounded-lg text-white transition-colors hover:opacity-90 cursor-pointer font-medium text-base disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   backgroundColor: roleColors[role as keyof typeof roleColors] || '#1F2937'
                 }}
@@ -384,7 +366,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                   setCode('');
                   setError(null);
                 }}
-                className="w-full py-2 px-4 text-gray-600 hover:text-gray-800 text-sm"
+                className="w-full py-2.5 px-4 text-gray-600 hover:text-gray-800 text-base"
               >
                 ← Go back
             </button>
@@ -394,7 +376,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="mt-6 text-center">
             <button
               onClick={handleToggleLogin}
-              className="text-blue-600 hover:underline"
+              className="text-base text-blue-600 hover:underline"
             >
               {isLogin
                 ? "Don't have an account? Sign up"
@@ -404,8 +386,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
           {isLogin && (
             <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-100">
-              <h3 className="text-sm mb-3 text-blue-900">Demo Credentials</h3>
-              <div className="space-y-2 text-xs">
+              <h3 className="text-base mb-3 text-blue-900">Demo Credentials</h3>
+              <div className="space-y-2 text-sm">
                 {demoCredentials.map((cred) => (
                   <div key={cred.role} className="flex justify-between items-center py-1">
                     <span
@@ -420,9 +402,6 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-blue-700 mt-3 pt-3 border-t border-blue-200">
-                Password: <span className="font-medium">any text</span>
-              </p>
             </div>
           )}
         </div>
@@ -449,31 +428,47 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             Comprehensive platform for conducting Z-Inspection methodology on AI systems.
           </p>
 
-          {/* Feature Icons */}
+          {/* Feature Cards */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
-              <CheckCircle2 className="h-8 w-8 mb-3 mx-auto" />
-              <p className="font-medium text-center text-[rgb(21,21,21)]">
-                Structured Evaluation
-              </p>
+            <div className="bg-white bg-opacity-95 backdrop-blur-sm p-4 rounded-2xl border border-white border-opacity-30 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-white hover:border-opacity-50 transition-all duration-150 ease-out">
+              <div className="flex flex-col items-center">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center mb-3">
+                  <CheckCircle2 className="h-6 w-6 text-blue-600" />
+                </div>
+                <p className="font-semibold text-center text-gray-900 text-[15px]">
+                  Structured Evaluation
+                </p>
+              </div>
             </div>
-            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
-              <Users className="h-8 w-8 mb-3 mx-auto" />
-              <p className="font-medium text-center text-[rgb(13,13,13)]">
-                Multi-Role Collaboration
-              </p>
+            <div className="bg-white bg-opacity-95 backdrop-blur-sm p-4 rounded-2xl border border-white border-opacity-30 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-white hover:border-opacity-50 transition-all duration-150 ease-out">
+              <div className="flex flex-col items-center">
+                <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center mb-3">
+                  <Users className="h-6 w-6 text-green-600" />
+                </div>
+                <p className="font-semibold text-center text-gray-900 text-[15px]">
+                  Multi-Role Collaboration
+                </p>
+              </div>
             </div>
-            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
-              <BarChart3 className="h-8 w-8 mb-3 mx-auto" />
-              <p className="font-medium text-center text-[rgb(22,22,22)]">
-                Tensions Management
-              </p>
+            <div className="bg-white bg-opacity-95 backdrop-blur-sm p-4 rounded-2xl border border-white border-opacity-30 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-white hover:border-opacity-50 transition-all duration-150 ease-out">
+              <div className="flex flex-col items-center">
+                <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center mb-3">
+                  <BarChart3 className="h-6 w-6 text-orange-600" />
+                </div>
+                <p className="font-semibold text-center text-gray-900 text-[15px]">
+                  Tensions Management
+                </p>
+              </div>
             </div>
-            <div className="bg-white bg-opacity-15 backdrop-blur-sm p-5 rounded-xl hover:bg-opacity-25 transition-all">
-              <FileText className="h-8 w-8 mb-3 mx-auto" />
-              <p className="font-medium text-center text-[rgb(17,17,17)]">
-                Comprehensive Reports
-              </p>
+            <div className="bg-white bg-opacity-95 backdrop-blur-sm p-4 rounded-2xl border border-white border-opacity-30 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-white hover:border-opacity-50 transition-all duration-150 ease-out">
+              <div className="flex flex-col items-center">
+                <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center mb-3">
+                  <FileText className="h-6 w-6 text-purple-600" />
+                </div>
+                <p className="font-semibold text-center text-gray-900 text-[15px]">
+                  Comprehensive Reports
+                </p>
+              </div>
             </div>
           </div>
         </div>
