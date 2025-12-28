@@ -1,5 +1,18 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+// Load environment variables:
+// - Prefer `.env` (common convention)
+// - Fallback to `env` (some Windows setups omit dotfiles)
+const dotenv = require('dotenv');
+const envPathDot = path.resolve(__dirname, '../.env');
+const envPathNoDot = path.resolve(__dirname, '../env');
+const dotResult = dotenv.config({ path: envPathDot });
+if (dotResult.error) {
+  const noDotResult = dotenv.config({ path: envPathNoDot });
+  if (noDotResult.error) {
+    // Keep running; platform env vars (Railway/Render) may still be present.
+    console.warn(`⚠️  dotenv could not load ${envPathDot} or ${envPathNoDot}:`, noDotResult.error.message);
+  }
+}
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -10,8 +23,13 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 
 if (!GEMINI_API_KEY) {
-  throw new Error("❌ GEMINI_API_KEY environment variable bulunamadı!");
+  console.error("❌ GEMINI_API_KEY environment variable bulunamadı!");
+  console.error(`📁 Kontrol edilen dosyalar: ${envPathDot}, ${envPathNoDot}`);
+  throw new Error("❌ GEMINI_API_KEY environment variable bulunamadı! Lütfen backend/.env dosyanızda GEMINI_API_KEY değişkenini tanımlayın.");
 }
+
+// Log API key loaded status (without showing the actual key)
+console.log(`✅ GEMINI_API_KEY yüklendi (uzunluk: ${GEMINI_API_KEY.length} karakter)`);
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
@@ -32,9 +50,7 @@ const generationConfig = {
 
 async function testApiKey() {
   const modelsToTry = [
-    // Prefer 2.5, fallback to 1.5 if 2.5 isn't available for this API key/project
-    { id: "gemini-2.5-flash", names: ["models/gemini-2.5-flash", "gemini-2.5-flash"] },
-    { id: "gemini-1.5-flash", names: ["models/gemini-1.5-flash", "gemini-1.5-flash"] }
+    { id: "gemini-2.5-flash", names: ["models/gemini-2.5-flash", "gemini-2.5-flash"] }
   ];
 
   let lastError = null;
@@ -102,12 +118,9 @@ Requirements:
 - Include page-break considerations in your structure
 `;
 
-  // Try 2.5 first, fallback to 1.5 if 2.5 isn't available for this API key/project
   const modelNamesToTry = [
     "models/gemini-2.5-flash",
-    "gemini-2.5-flash",
-    "models/gemini-1.5-flash",
-    "gemini-1.5-flash"
+    "gemini-2.5-flash"
   ];
 
   let lastError = null;
@@ -150,15 +163,23 @@ Requirements:
   console.error("❌ Tüm Gemini modelleri başarısız oldu.");
 
   if (lastError) {
-    if (lastError.message.includes("403")) {
+    const errorMsg = lastError.message || '';
+    const errorMsgLower = errorMsg.toLowerCase();
+    
+    // Check for API key expired or invalid (400 Bad Request)
+    if (errorMsg.includes("400") || errorMsgLower.includes("expired") || errorMsgLower.includes("api_key_invalid") || errorMsgLower.includes("api key expired")) {
+      throw new Error("❌ Gemini API Key süresi dolmuş veya geçersiz. Lütfen .env dosyanızdaki GEMINI_API_KEY değerini kontrol edin ve yeni bir API key oluşturun.");
+    }
+
+    if (errorMsg.includes("403") || errorMsgLower.includes("permission_denied")) {
       throw new Error("❌ Gemini API Key geçersiz veya yetkisiz.");
     }
 
-    if (lastError.message.includes("429")) {
-      throw new Error("❌ Gemini API quota aşıldı.");
+    if (errorMsg.includes("429") || errorMsgLower.includes("resource_exhausted") || errorMsgLower.includes("quota")) {
+      throw new Error("❌ Gemini API quota aşıldı. Lütfen daha sonra tekrar deneyin.");
     }
 
-    if (lastError.message.includes("404") || lastError.message.includes("not found")) {
+    if (errorMsg.includes("404") || errorMsgLower.includes("not found")) {
       throw new Error("❌ Gemini modeli bulunamadı. Lütfen API key'inizi ve model erişiminizi kontrol edin.");
     }
 
