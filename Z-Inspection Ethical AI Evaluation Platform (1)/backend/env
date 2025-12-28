@@ -1,9 +1,0 @@
-MONGO_URI=mongodb+srv://admin_merve:Sifre123@cluster0.tg8voq1.mongodb.net/zinspection?retryWrites=true&w=majority&appName=Cluster0
-PORT=5000
-
-GEMINI_API_KEY=AIzaSyCtENpJzKXPLftT0s4UOeFdsD-EGiAUQZY
-
-EMAIL_USER=elif.yildirim0282@gmail.com
-EMAIL_PASS=tcoythizfjrpuxvj
-SERVER_URL=https://z-inspection-production.up.railway.app
-CLIENT_URL=http://localhost:3000
