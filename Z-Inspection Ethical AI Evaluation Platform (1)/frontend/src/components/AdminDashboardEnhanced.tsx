@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Folder, MessageSquare, Users, LogOut, Search, BarChart3, UserPlus, X, Link as LinkIcon, CheckCircle2, Trash2, Bell, Clock, FileText, Download, ArrowLeft } from 'lucide-react';
+import { Plus, Folder, MessageSquare, Users, LogOut, Search, BarChart3, UserPlus, X, Link as LinkIcon, CheckCircle2, Trash2, Bell, Clock, FileText, Download, ArrowLeft, Sparkles, AlertTriangle, Loader2 } from 'lucide-react';
 import { Project, User, UseCase } from '../types';
 import { fetchUserProgress } from '../utils/userProgress';
 import { ChatPanel } from './ChatPanel';
@@ -1596,6 +1596,14 @@ function CreatedReportsTab({ projects, currentUser }: any) {
   const [loading, setLoading] = useState(false);
   const [detailsReport, setDetailsReport] = useState<any | null>(null);
   const [filterProjectId, setFilterProjectId] = useState<string>('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<{
+    summary: string;
+    ethical_principles: string[];
+    risk_tone: "low" | "medium" | "high";
+    warning_signal: boolean;
+    confidence: "low" | "medium" | "high";
+  } | null>(null);
 
   // Fetch all reports
   const fetchReports = async () => {
@@ -1714,6 +1722,49 @@ function CreatedReportsTab({ projects, currentUser }: any) {
     }
   };
 
+  // Analyze expert comments
+  const handleAnalyzeComments = async () => {
+    if (!detailsReport?.expertComments || detailsReport.expertComments.length === 0) {
+      alert("No expert comments to analyze.");
+      return;
+    }
+
+    setAnalyzing(true);
+    setAnalysisResult(null);
+    try {
+      const comments = detailsReport.expertComments
+        .map((c: any) => c.commentText)
+        .filter((text: string) => text && text.trim());
+
+      if (comments.length === 0) {
+        alert("No valid comments to analyze.");
+        return;
+      }
+
+      const res = await fetch(api("/api/reports/analyze-expert-comments"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expertComments: comments }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({} as any));
+        throw new Error(err.error || "Failed to analyze comments");
+      }
+
+      const data = await res.json();
+      if (data.success && data.analysis) {
+        setAnalysisResult(data.analysis);
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (e: any) {
+      alert(e?.message || "Failed to analyze expert comments");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   useEffect(() => {
     fetchReports();
   }, [filterProjectId]);
@@ -1760,10 +1811,29 @@ function CreatedReportsTab({ projects, currentUser }: any) {
           </div>
         </div>
 
-        <div className="px-8 py-6">
+        <div className="px-8 py-6 space-y-6">
           <div className="bg-white border border-gray-200 rounded-lg">
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Expert Comments</h2>
+              {comments.length > 0 && (
+                <button
+                  onClick={handleAnalyzeComments}
+                  disabled={analyzing}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3 w-3" />
+                      AI Analysis
+                    </>
+                  )}
+                </button>
+              )}
             </div>
             <div className="p-6 space-y-4">
               {comments.length > 0 ? (
@@ -1783,6 +1853,87 @@ function CreatedReportsTab({ projects, currentUser }: any) {
               )}
             </div>
           </div>
+
+          {analysisResult && (
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-blue-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">AI Analysis Results</h2>
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Summary</div>
+                  <div className="text-sm text-gray-800 bg-gray-50 rounded-lg p-3">{analysisResult.summary}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Risk Tone</div>
+                    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                      analysisResult.risk_tone === "high" 
+                        ? "bg-red-100 text-red-700" 
+                        : analysisResult.risk_tone === "medium"
+                        ? "bg-yellow-100 text-yellow-700"
+                        : "bg-green-100 text-green-700"
+                    }`}>
+                      {analysisResult.risk_tone === "high" && <AlertTriangle className="h-3 w-3" />}
+                      {analysisResult.risk_tone === "medium" && <AlertTriangle className="h-3 w-3" />}
+                      {analysisResult.risk_tone === "low" && <CheckCircle2 className="h-3 w-3" />}
+                      {analysisResult.risk_tone.toUpperCase()}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Warning Signal</div>
+                    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                      analysisResult.warning_signal
+                        ? "bg-red-100 text-red-700"
+                        : "bg-gray-100 text-gray-700"
+                    }`}>
+                      {analysisResult.warning_signal ? (
+                        <>
+                          <AlertTriangle className="h-3 w-3" />
+                          Warning Detected
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-3 w-3" />
+                          No Critical Warnings
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {analysisResult.ethical_principles.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Ethical Principles Identified</div>
+                    <div className="flex flex-wrap gap-2">
+                      {analysisResult.ethical_principles.map((principle, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-medium"
+                        >
+                          {principle}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Confidence Level</div>
+                  <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                    analysisResult.confidence === "high"
+                      ? "bg-green-100 text-green-700"
+                      : analysisResult.confidence === "medium"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-gray-100 text-gray-700"
+                  }`}>
+                    {analysisResult.confidence.toUpperCase()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </>
     );
@@ -1915,6 +2066,14 @@ function ReportsTab({ projects, currentUser, users }: any) {
   const [detailsReport, setDetailsReport] = useState<any | null>(null);
   const [filterProjectId, setFilterProjectId] = useState<string>('');
   const [projectProgresses, setProjectProgresses] = useState<Record<string, number>>({});
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<{
+    summary: string;
+    ethical_principles: string[];
+    risk_tone: "low" | "medium" | "high";
+    warning_signal: boolean;
+    confidence: "low" | "medium" | "high";
+  } | null>(null);
 
   // Fetch all reports
   const fetchReports = async () => {
@@ -2173,10 +2332,29 @@ function ReportsTab({ projects, currentUser, users }: any) {
           </div>
         </div>
 
-        <div className="px-8 py-6">
+        <div className="px-8 py-6 space-y-6">
           <div className="bg-white border border-gray-200 rounded-lg">
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Expert Comments</h2>
+              {comments.length > 0 && (
+                <button
+                  onClick={handleAnalyzeComments}
+                  disabled={analyzing}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3 w-3" />
+                      AI Analysis
+                    </>
+                  )}
+                </button>
+              )}
             </div>
             <div className="p-6 space-y-4">
               {comments.length > 0 ? (
@@ -2196,6 +2374,87 @@ function ReportsTab({ projects, currentUser, users }: any) {
               )}
             </div>
           </div>
+
+          {analysisResult && (
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-blue-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">AI Analysis Results</h2>
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Summary</div>
+                  <div className="text-sm text-gray-800 bg-gray-50 rounded-lg p-3">{analysisResult.summary}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Risk Tone</div>
+                    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                      analysisResult.risk_tone === "high" 
+                        ? "bg-red-100 text-red-700" 
+                        : analysisResult.risk_tone === "medium"
+                        ? "bg-yellow-100 text-yellow-700"
+                        : "bg-green-100 text-green-700"
+                    }`}>
+                      {analysisResult.risk_tone === "high" && <AlertTriangle className="h-3 w-3" />}
+                      {analysisResult.risk_tone === "medium" && <AlertTriangle className="h-3 w-3" />}
+                      {analysisResult.risk_tone === "low" && <CheckCircle2 className="h-3 w-3" />}
+                      {analysisResult.risk_tone.toUpperCase()}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Warning Signal</div>
+                    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                      analysisResult.warning_signal
+                        ? "bg-red-100 text-red-700"
+                        : "bg-gray-100 text-gray-700"
+                    }`}>
+                      {analysisResult.warning_signal ? (
+                        <>
+                          <AlertTriangle className="h-3 w-3" />
+                          Warning Detected
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-3 w-3" />
+                          No Critical Warnings
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {analysisResult.ethical_principles.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Ethical Principles Identified</div>
+                    <div className="flex flex-wrap gap-2">
+                      {analysisResult.ethical_principles.map((principle, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-medium"
+                        >
+                          {principle}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 uppercase mb-2">Confidence Level</div>
+                  <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                    analysisResult.confidence === "high"
+                      ? "bg-green-100 text-green-700"
+                      : analysisResult.confidence === "medium"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-gray-100 text-gray-700"
+                  }`}>
+                    {analysisResult.confidence.toUpperCase()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </>
     );

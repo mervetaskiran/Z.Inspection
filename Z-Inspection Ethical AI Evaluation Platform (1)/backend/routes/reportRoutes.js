@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const reportController = require('../controllers/reportController');
-const { testApiKey } = require('../services/geminiService');
+const { testApiKey, analyzeExpertComments } = require('../services/geminiService');
 
 // GET /api/reports/list-models - List available Gemini models (must be before /:id route)
 router.get('/list-models', async (req, res) => {
@@ -36,6 +36,32 @@ router.get('/test-api-key', async (req, res) => {
 
 // POST /api/reports/generate - Generate AI report
 router.post('/generate', reportController.generateReport);
+
+// POST /api/reports/analyze-expert-comments - Analyze expert comments using Gemini AI (must be before /:id route)
+router.post('/analyze-expert-comments', async (req, res) => {
+  try {
+    const { expertComments } = req.body;
+
+    if (!expertComments) {
+      return res.status(400).json({ 
+        error: 'expertComments is required. Can be a string or array of strings.' 
+      });
+    }
+
+    const analysis = await analyzeExpertComments(expertComments);
+    
+    res.json({
+      success: true,
+      analysis
+    });
+  } catch (error) {
+    console.error('Error analyzing expert comments:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Failed to analyze expert comments'
+    });
+  }
+});
 
 // GET /api/reports/assigned-to-me - Reports for projects assigned to user (must be before /:id route)
 router.get('/assigned-to-me', reportController.getAssignedToMe);
