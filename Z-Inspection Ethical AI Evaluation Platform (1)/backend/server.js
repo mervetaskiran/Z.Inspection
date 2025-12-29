@@ -3658,10 +3658,11 @@ app.get('/api/messages/unread-count', async (req, res) => {
     
     // Group by projectId and fromUserId
     const conversations = {};
+    let skippedCount = 0;
     unreadMessages.forEach(msg => {
       // Skip messages with missing or null populated fields
       if (!msg || !msg.projectId || !msg.fromUserId) {
-        console.warn('Skipping message with missing projectId or fromUserId:', msg?._id);
+        skippedCount++;
         return;
       }
       
@@ -3669,7 +3670,7 @@ app.get('/api/messages/unread-count', async (req, res) => {
       const fromUserIdRaw = msg.fromUserId._id || msg.fromUserId;
       
       if (!projectIdRaw || !fromUserIdRaw) {
-        console.warn('Skipping message with invalid projectId or fromUserId:', msg?._id);
+        skippedCount++;
         return;
       }
       
@@ -3700,7 +3701,12 @@ app.get('/api/messages/unread-count', async (req, res) => {
         conversations[key].isNotification = Boolean(msg.isNotification);
       }
     });
-
+    
+    // Log skipped messages only if there are many (to avoid spam)
+    if (skippedCount > 0) {
+      console.warn(`⚠️ Skipped ${skippedCount} message(s) with missing/invalid projectId or fromUserId (out of ${unreadMessages.length} total)`);
+    }
+    
     const totalCount = unreadMessages.length;
     const conversationList = Object.values(conversations);
 

@@ -318,10 +318,250 @@ Generate a comprehensive PDF-ready report with the following structure:
 }
 
 /* ============================================================
+   5. EXPERT COMMENTS ANALYZER
+============================================================ */
+
+async function analyzeExpertComments(expertComments) {
+  // Validate input
+  if (!expertComments || (typeof expertComments !== 'string' && !Array.isArray(expertComments))) {
+    throw new Error('expertComments must be a string or array of strings');
+  }
+
+  // Convert array to single string if needed
+  const commentsText = Array.isArray(expertComments) 
+    ? expertComments.join('\n\n---\n\n') 
+    : expertComments;
+
+  if (!commentsText.trim()) {
+    throw new Error('expertComments cannot be empty');
+  }
+
+  const systemInstruction = `You are an AI assistant used STRICTLY as a semantic analysis and decision-support tool
+within an ethical AI evaluation platform based on the Z-Inspection methodology.
+
+IMPORTANT LIMITATIONS:
+- You MUST NOT make final decisions.
+- You MUST NOT approve, reject, or classify an AI system as compliant or non-compliant.
+- You MUST NOT override or reinterpret expert intent.
+- You MUST NOT invent risks, facts, or assumptions not explicitly stated.
+- Your output is advisory only and non-binding.
+- Human administrators retain full authority, responsibility, and accountability.
+- Your role is limited to semantic interpretation of expert-written text.`;
+
+  const userPrompt = `TASK:
+You will receive one or more expert comments evaluating an AI system.
+
+Your objectives are:
+1. Summarize the main concerns, agreements, or recurring themes.
+2. Identify which ethical principles are implicated by the expert language.
+3. Estimate the overall risk tone expressed by the experts.
+4. Detect whether explicit warning signals are present.
+5. Estimate confidence based on clarity, strength, and consistency of expert statements.
+
+--------------------------------------------------
+
+ETHICAL PRINCIPLES (USE ONLY THESE LABELS - MATCH EXACTLY):
+Match the expert comments to these Z-Inspection principles:
+- TRANSPARENCY
+- TRANSPARENCY & EXPLAINABILITY
+- HUMAN AGENCY & OVERSIGHT
+- HUMAN OVERSIGHT & CONTROL
+- TECHNICAL ROBUSTNESS & SAFETY
+- PRIVACY & DATA GOVERNANCE
+- PRIVACY & DATA PROTECTION
+- DIVERSITY, NON-DISCRIMINATION & FAIRNESS
+- SOCIETAL & INTERPERSONAL WELL-BEING
+- ACCOUNTABILITY
+- ACCOUNTABILITY & RESPONSIBILITY
+- LAWFULNESS & COMPLIANCE
+- RISK MANAGEMENT & HARM PREVENTION
+- PURPOSE LIMITATION & DATA MINIMIZATION
+- USER RIGHTS & AUTONOMY
+
+If a comment relates to a principle not in this list, map it to the closest match.
+Use the exact capitalization and spelling shown above.
+
+--------------------------------------------------
+
+RISK TONE (SELECT EXACTLY ONE):
+- low: Comments express minimal concern, positive outlook, or satisfaction
+- medium: Comments express moderate concern, cautious optimism, or balanced views
+- high: Comments express significant concern, serious risks, or negative outlook
+
+--------------------------------------------------
+
+WARNING SIGNAL RULE:
+Set "warning_signal" to true ONLY if experts explicitly mention serious concerns such as:
+- high risk, critical risk, severe risk
+- potential harm, actual harm, risk of harm
+- unsafe, dangerous, hazardous
+- non-compliance, violation, breach
+- unacceptable impact, severe impact, critical impact
+- severe limitations, critical limitations
+- urgent action needed, immediate concern
+
+If concerns are cautious, conditional, exploratory, or speculative without strong language, set it to false.
+When in doubt, prefer false (only flag explicit warnings).
+
+--------------------------------------------------
+
+CONFIDENCE LEVEL:
+- low: Conflicting expert opinions, vague statements, or insufficient information
+- medium: Generally consistent views with some uncertainty or limited detail
+- high: Clear, consistent, well-supported expert statements with strong evidence
+
+--------------------------------------------------
+
+INPUT:
+${commentsText}
+
+--------------------------------------------------
+
+OUTPUT REQUIREMENTS:
+- Output MUST be valid JSON only (no markdown, no explanations, no extra text)
+- Do NOT include assumptions beyond the input
+- Ensure all string values are properly escaped
+- Array of ethical_principles may contain 0 or more items
+- risk_tone MUST be exactly one of: "low", "medium", "high"
+- warning_signal MUST be exactly one of: true, false
+- confidence MUST be exactly one of: "low", "medium", "high"
+
+OUTPUT FORMAT (EXACT):
+
+{
+  "summary": "Brief summary of expert comments (2-4 sentences)",
+  "ethical_principles": ["PRINCIPLE1", "PRINCIPLE2"],
+  "risk_tone": "low | medium | high",
+  "warning_signal": true | false,
+  "confidence": "low | medium | high"
+}
+
+--------------------------------------------------
+
+IMPORTANT:
+- Return ONLY the JSON object, nothing else
+- Do not include markdown code blocks (\`\`\`json)
+- Do not include explanatory text before or after the JSON
+- Ensure JSON is valid and parseable`;
+
+  const modelNamesToTry = [
+    "models/gemini-2.5-flash",
+    "gemini-2.5-flash"
+  ];
+
+  // Lower temperature for more consistent JSON output
+  const analysisConfig = {
+    temperature: 0.3,
+    topP: 0.95,
+    topK: 40,
+    maxOutputTokens: 2048
+  };
+
+  let lastError = null;
+
+  for (const modelName of modelNamesToTry) {
+    try {
+      console.log(`🤖 Gemini (${modelName}) expert comments analiz ediyor...`);
+
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction
+      });
+
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        generationConfig: analysisConfig
+      });
+
+      let rawResponse = result.response.text();
+
+      if (!rawResponse) {
+        throw new Error("❌ Gemini boş yanıt döndü.");
+      }
+
+      // Clean up response - remove markdown code blocks if present
+      rawResponse = rawResponse.trim();
+      if (rawResponse.startsWith('```json')) {
+        rawResponse = rawResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (rawResponse.startsWith('```')) {
+        rawResponse = rawResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+      rawResponse = rawResponse.trim();
+
+      // Try to find JSON object if there's extra text
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        rawResponse = jsonMatch[0];
+      }
+
+      // Parse JSON
+      let analysis;
+      try {
+        analysis = JSON.parse(rawResponse);
+      } catch (parseError) {
+        console.error('❌ JSON parse hatası:', parseError.message);
+        console.error('Raw response:', rawResponse.substring(0, 500));
+        throw new Error(`JSON parse hatası: ${parseError.message}`);
+      }
+
+      // Validate required fields
+      if (!analysis.summary || typeof analysis.summary !== 'string') {
+        throw new Error('Invalid response: summary field missing or invalid');
+      }
+      if (!Array.isArray(analysis.ethical_principles)) {
+        throw new Error('Invalid response: ethical_principles must be an array');
+      }
+      if (!['low', 'medium', 'high'].includes(analysis.risk_tone)) {
+        throw new Error('Invalid response: risk_tone must be one of: low, medium, high');
+      }
+      if (typeof analysis.warning_signal !== 'boolean') {
+        throw new Error('Invalid response: warning_signal must be a boolean');
+      }
+      if (!['low', 'medium', 'high'].includes(analysis.confidence)) {
+        throw new Error('Invalid response: confidence must be one of: low, medium, high');
+      }
+
+      console.log(`✅ Expert comments analizi başarıyla tamamlandı (${modelName}).`);
+      return analysis;
+
+    } catch (error) {
+      console.error(`❌ Model ${modelName} başarısız:`, error.message);
+      lastError = error;
+      
+      // If it's not a 404 (model not found), don't try other models
+      if (!error.message.includes("404") && !error.message.includes("not found") && !error.message.includes("JSON")) {
+        break;
+      }
+    }
+  }
+
+  // If we get here, all models failed
+  if (lastError) {
+    const errorMsg = lastError.message || '';
+    const errorMsgLower = errorMsg.toLowerCase();
+    
+    if (errorMsg.includes("400") || errorMsgLower.includes("expired") || errorMsgLower.includes("api_key_invalid")) {
+      throw new Error("❌ Gemini API Key süresi dolmuş veya geçersiz.");
+    }
+    if (errorMsg.includes("403") || errorMsgLower.includes("permission_denied")) {
+      throw new Error("❌ Gemini API Key geçersiz veya yetkisiz.");
+    }
+    if (errorMsg.includes("429") || errorMsgLower.includes("resource_exhausted") || errorMsgLower.includes("quota")) {
+      throw new Error("❌ Gemini API quota aşıldı. Lütfen daha sonra tekrar deneyin.");
+    }
+    
+    throw new Error(`❌ Expert comments analiz edilemedi: ${lastError.message}`);
+  }
+
+  throw new Error("❌ Expert comments analiz edilemedi: Bilinmeyen hata.");
+}
+
+/* ============================================================
    EXPORTS
 ============================================================ */
 
 module.exports = {
   generateReport,
+  analyzeExpertComments,
   testApiKey
 };
