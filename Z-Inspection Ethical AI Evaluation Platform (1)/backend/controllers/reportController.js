@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { generateReport } = require('../services/geminiService');
+const { generateReport, generateDashboardNarrative } = require('../services/geminiService');
 const { generatePDFFromMarkdown } = require('../services/pdfService');
 const { generateDOCXFromMarkdown } = require('../services/docxService');
 
@@ -791,6 +791,199 @@ exports.finalizeReport = async (req, res) => {
   } catch (err) {
     console.error('Error finalizing report:', err);
     res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/reports/generate-dashboard-narrative
+ * Generate narrative synthesis from dashboard metrics, scores, and tensions
+ */
+exports.generateDashboardNarrative = async (req, res) => {
+  try {
+    const { projectId } = req.body;
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'projectId is required' });
+    }
+
+    const projectIdObj = isValidObjectId(projectId) 
+      ? new mongoose.Types.ObjectId(projectId) 
+      : projectId;
+
+    // Verify project exists
+    const project = await Project.findById(projectIdObj).lean();
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Collect all necessary data
+    const { scores, tensions } = await collectAnalysisData(projectIdObj);
+
+    // Build dashboardMetrics from scores
+    const dashboardMetrics = {
+      overallScores: {},
+      byPrinciple: {},
+      roleBreakdowns: {}
+    };
+
+    // Aggregate overall scores
+    if (scores.length > 0) {
+      const allTotals = scores.map(s => s.totals?.avg || 0).filter(v => v > 0);
+      if (allTotals.length > 0) {
+        dashboardMetrics.overallScores = {
+          avg: allTotals.reduce((a, b) => a + b, 0) / allTotals.length,
+          min: Math.min(...allTotals),
+          max: Math.max(...allTotals),
+          count: allTotals.length
+        };
+      }
+
+      // Aggregate by principle
+      const principleScores = {};
+      scores.forEach(score => {
+        if (score.byPrinciple) {
+          Object.entries(score.byPrinciple).forEach(([principle, data]) => {
+            if (data && data.avg !== undefined) {
+              if (!principleScores[principle]) {
+                principleScores[principle] = [];
+              }
+              principleScores[principle].push(data.avg);
+            }
+          });
+        }
+      });
+
+      Object.entries(principleScores).forEach(([principle, values]) => {
+        dashboardMetrics.byPrinciple[principle] = {
+          avg: values.reduce((a, b) => a + b, 0) / values.length,
+          min: Math.min(...values),
+          max: Math.max(...values),
+          count: values.length
+        };
+      });
+
+      // Role breakdowns
+      const roleGroups = {};
+      scores.forEach(score => {
+        const role = score.role || 'unknown';
+        if (!roleGroups[role]) {
+          roleGroups[role] = [];
+        }
+        if (score.totals?.avg) {
+          roleGroups[role].push(score.totals.avg);
+        }
+      });
+
+      Object.entries(roleGroups).forEach(([role, values]) => {
+        dashboardMetrics.roleBreakdowns[role] = {
+          avg: values.reduce((a, b) => a + b, 0) / values.length,
+          count: values.length
+        };
+      });
+    }
+
+    // Build topRiskyQuestions (questions with lowest scores)
+    const Response = require('../models/response');
+    const Question = require('../models/question');
+    
+    const responses = await Response.find({ 
+      projectId: projectIdObj,
+      status: 'submitted'
+    }).lean();
+
+    const questionScores = {};
+    for (const response of responses) {
+      if (response.answers && Array.isArray(response.answers)) {
+        for (const answer of response.answers) {
+          if (answer.score !== undefined && answer.questionId) {
+            const questionId = answer.questionId.toString();
+            if (!questionScores[questionId]) {
+              questionScores[questionId] = [];
+            }
+            questionScores[questionId].push(answer.score);
+          }
+        }
+      }
+    }
+
+    const topRiskyQuestions = [];
+    for (const [questionId, scores] of Object.entries(questionScores)) {
+      const avgRisk = scores.reduce((a, b) => a + b, 0) / scores.length;
+      // Lower score = higher risk, so we want questions with avgRisk < 2.0
+      if (avgRisk < 2.0 && scores.length > 0) {
+        try {
+          const question = await Question.findById(questionId).lean();
+          if (question) {
+            topRiskyQuestions.push({
+              questionId: questionId,
+              questionCode: question.code || questionId,
+              principle: question.principle || 'Unknown',
+              avgRisk: avgRisk,
+              count: scores.length
+            });
+          }
+        } catch (err) {
+          // Skip if question not found
+        }
+      }
+    }
+
+    // Sort by avgRisk (ascending = highest risk first) and limit to top 10
+    topRiskyQuestions.sort((a, b) => a.avgRisk - b.avgRisk);
+    topRiskyQuestions.splice(10);
+
+    // Build tensionSummaries
+    const tensionSummaries = tensions.map(tension => ({
+      claim: tension.claim || tension.claimStatement || '',
+      principle1: tension.principle1 || '',
+      principle2: tension.principle2 || '',
+      severity: tension.severityLevel || tension.severity || 'Unknown',
+      reviewState: tension.reviewState || 'Proposed',
+      evidenceCount: Array.isArray(tension.evidence) ? tension.evidence.length : 0,
+      evidenceTypes: Array.isArray(tension.evidence) 
+        ? [...new Set(tension.evidence.map(e => e.evidenceType || 'Unknown').filter(Boolean))]
+        : []
+    }));
+
+    // Build responseExcerpts (optional - sample a few expert answers)
+    const responseExcerpts = [];
+    const sampleResponses = responses.slice(0, 5); // Sample first 5 responses
+    for (const response of sampleResponses) {
+      if (response.answers && Array.isArray(response.answers)) {
+        const textAnswers = response.answers
+          .filter(a => a.answerText && a.answerText.trim().length > 20)
+          .slice(0, 2); // Max 2 excerpts per response
+        
+        textAnswers.forEach(answer => {
+          responseExcerpts.push({
+            questionCode: answer.questionCode || 'Unknown',
+            excerpt: answer.answerText.substring(0, 200) // Limit to 200 chars
+          });
+        });
+      }
+    }
+
+    // Prepare input data for narrative generation
+    const inputData = {
+      dashboardMetrics,
+      topRiskyQuestions,
+      responseExcerpts: responseExcerpts.length > 0 ? responseExcerpts : undefined,
+      tensionSummaries: tensionSummaries.length > 0 ? tensionSummaries : undefined
+    };
+
+    // Generate narrative
+    const narrative = await generateDashboardNarrative(inputData);
+
+    res.json({
+      success: true,
+      narrative
+    });
+  } catch (err) {
+    console.error('Error generating dashboard narrative:', err);
+    res.status(err.statusCode || 500).json({ 
+      success: false,
+      error: err.message || 'Failed to generate dashboard narrative'
+    });
   }
 };
 

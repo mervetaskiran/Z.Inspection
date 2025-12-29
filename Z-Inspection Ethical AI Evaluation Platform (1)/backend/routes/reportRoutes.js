@@ -37,6 +37,9 @@ router.get('/test-api-key', async (req, res) => {
 // POST /api/reports/generate - Generate AI report
 router.post('/generate', reportController.generateReport);
 
+// POST /api/reports/generate-dashboard-narrative - Generate dashboard narrative synthesis
+router.post('/generate-dashboard-narrative', reportController.generateDashboardNarrative);
+
 // POST /api/reports/analyze-expert-comments - Analyze expert comments using Gemini AI (must be before /:id route)
 router.post('/analyze-expert-comments', async (req, res) => {
   try {

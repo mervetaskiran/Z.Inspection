@@ -191,3 +191,4 @@ IMPORTANT:
 5. **Boş input**: Hata yönetimi
 6. **Geçersiz JSON**: Parse hatası yönetimi
 
+
