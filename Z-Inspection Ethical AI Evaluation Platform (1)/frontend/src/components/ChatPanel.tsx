@@ -14,6 +14,7 @@ interface ChatPanelProps {
   onDeleteConversation?: () => void;
   defaultFullscreen?: boolean;
   showProjectTitle?: boolean;
+  forceScrollOnMount?: boolean;
 }
 
 export function ChatPanel({
@@ -25,7 +26,8 @@ export function ChatPanel({
   inline = false,
   onDeleteConversation,
   defaultFullscreen = false,
-  showProjectTitle = false
+  showProjectTitle = false,
+  forceScrollOnMount = false
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -45,13 +47,58 @@ export function ChatPanel({
   // Chat scroll behavior (WhatsApp-style):
   // - Auto-scroll only on send or initial open
   // - Never override manual user scrolling
-  const scrollToBottom = () => {
+  const scrollToBottom = (force = false) => {
     const container = messagesContainerRef.current;
     if (!container) return;
     
+    // Use multiple attempts to ensure scroll happens after DOM updates
+    const attemptScroll = () => {
+      if (container) {
+        // Force scroll to absolute bottom - use scrollHeight directly
+        // This ensures we go to the very bottom
+        container.scrollTop = container.scrollHeight;
+        
+        // Double-check: if still not at bottom, force it again
+        requestAnimationFrame(() => {
+          if (container) {
+            const maxScroll = container.scrollHeight - container.clientHeight;
+            if (container.scrollTop < maxScroll - 5) {
+              container.scrollTop = container.scrollHeight;
+            }
+          }
+        });
+        
+        // Also try scrollIntoView on the messagesEndRef element as backup
+        if (messagesEndRef.current) {
+          try {
+            messagesEndRef.current.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
+          } catch (e) {
+            // Fallback if scrollIntoView fails
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }
+    };
+    
+    // Immediate scroll
+    attemptScroll();
+    
+    // Scroll after next frame
     requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
+      attemptScroll();
+      // Also try after a small delay to catch any late DOM updates
+      setTimeout(attemptScroll, 50);
     });
+    
+    // Force scroll after multiple delays if needed
+    if (force) {
+      setTimeout(attemptScroll, 100);
+      setTimeout(attemptScroll, 200);
+      setTimeout(attemptScroll, 400);
+      setTimeout(attemptScroll, 600);
+      setTimeout(attemptScroll, 1000);
+      setTimeout(attemptScroll, 1500);
+    }
   };
 
   const normalizedProjectId =
@@ -187,7 +234,11 @@ export function ChatPanel({
     // Initial fetch - scroll to bottom after first load
     const initialLoad = async () => {
       await fetchMessages();
-      setTimeout(() => scrollToBottom(), 100);
+      // Force scroll to bottom with multiple attempts - wait for DOM to be ready
+      setTimeout(() => scrollToBottom(true), 150);
+      setTimeout(() => scrollToBottom(true), 300);
+      setTimeout(() => scrollToBottom(true), 500);
+      setTimeout(() => scrollToBottom(true), 800);
     };
     initialLoad();
     markAsRead();
@@ -201,6 +252,49 @@ export function ChatPanel({
       if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
     };
   }, [normalizedProjectId, currentUserId, otherUserId]);
+  
+  // Also scroll when messages change (for initial load) - THIS IS CRITICAL
+  useEffect(() => {
+    if (messages.length > 0 && !loading) {
+      // Aggressively scroll to bottom when messages are loaded
+      // Use multiple timeouts to ensure it happens after all DOM updates
+      const scrollAttempts = [50, 100, 200, 400, 600, 800, 1200];
+      scrollAttempts.forEach(delay => {
+        setTimeout(() => {
+          scrollToBottom(true);
+          // Also check if we're actually at bottom, if not, try again
+          const container = messagesContainerRef.current;
+          if (container) {
+            const isAtBottom = Math.abs(container.scrollHeight - container.clientHeight - container.scrollTop) < 10;
+            if (!isAtBottom) {
+              container.scrollTop = container.scrollHeight;
+            }
+          }
+        }, delay);
+      });
+    }
+  }, [messages.length, loading]);
+  
+  // Force scroll when panel is opened (for admin chats)
+  useEffect(() => {
+    if (forceScrollOnMount && messages.length > 0 && !loading) {
+      // Very aggressive scroll when chat is first opened
+      const scrollAttempts = [50, 100, 200, 300, 500, 700, 1000, 1500];
+      scrollAttempts.forEach(delay => {
+        setTimeout(() => {
+          scrollToBottom(true);
+          // Double-check we're at bottom
+          const container = messagesContainerRef.current;
+          if (container) {
+            const maxScroll = container.scrollHeight - container.clientHeight;
+            if (container.scrollTop < maxScroll - 10) {
+              container.scrollTop = container.scrollHeight;
+            }
+          }
+        }, delay);
+      });
+    }
+  }, [forceScrollOnMount, messages.length, loading]);
 
   // Disable auto-scroll when user manually scrolls
   useEffect(() => {
@@ -212,7 +306,17 @@ export function ChatPanel({
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
+    
+    // Listen for chat-opened event to force scroll
+    const handleChatOpened = () => {
+      setTimeout(() => scrollToBottom(true), 100);
+    };
+    window.addEventListener('chat-opened', handleChatOpened);
+    
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('chat-opened', handleChatOpened);
+    };
   }, []);
 
   const getSenderName = (message: any) => {
@@ -379,7 +483,7 @@ export function ChatPanel({
 
   // Layout classes
   const containerClasses = inline
-    ? `w-full max-w-full bg-white border border-gray-200 min-h-0 h-full max-h-full overflow-hidden`
+    ? `w-full max-w-full bg-white border border-gray-200 min-h-0 h-full max-h-full overflow-hidden flex flex-col`
     : `fixed ${isFullscreen ? 'inset-0' : 'bottom-4 right-4 w-96'} bg-white shadow-2xl z-50 border border-gray-200 rounded-lg flex flex-col min-h-0`;
   
   const fixedHeight = isFullscreen ? '100vh' : `min(600px, calc(100vh - 2rem))`;
@@ -389,12 +493,31 @@ export function ChatPanel({
       className={containerClasses}
       style={
         inline
-          ? { display: 'grid', gridTemplateRows: 'auto 1fr auto', minHeight: 0, height: '100%', maxHeight: '100%' }
-          : (!isFullscreen ? { height: fixedHeight, display: 'flex', flexDirection: 'column', position: 'relative' } : { display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' })
+          ? { 
+              display: 'flex', 
+              flexDirection: 'column', 
+              minHeight: 0, 
+              height: '100%', 
+              maxHeight: '100%',
+              overflow: 'hidden'
+            }
+          : (!isFullscreen ? { 
+              height: fixedHeight, 
+              display: 'flex', 
+              flexDirection: 'column', 
+              position: 'relative',
+              overflow: 'hidden'
+            } : { 
+              display: 'flex', 
+              flexDirection: 'column', 
+              height: '100vh', 
+              position: 'relative',
+              overflow: 'hidden'
+            })
       }
     >
-      {/* Header */}
-      <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between shrink-0" style={{ flexShrink: 0 }}>
+      {/* Header - Fixed height */}
+      <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between" style={{ flexShrink: 0, flex: '0 0 auto' }}>
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center">
             {otherUser.name?.charAt(0) || 'U'}
@@ -425,16 +548,20 @@ export function ChatPanel({
         </div>
       </div>
 
-      {/* Messages (scroll area) - SINGLE CONTAINER, NORMAL FLOW */}
+      {/* Messages (scroll area) - Scrollable container with flex: 1 */}
       <div 
         ref={messagesContainerRef}
-        className="min-h-0 max-h-full overflow-y-auto bg-gray-50 overscroll-contain touch-pan-y"
+        className="min-h-0 bg-gray-50 overscroll-contain touch-pan-y chat-messages-scroll"
         tabIndex={0}
         aria-label="Chat messages"
         style={{ 
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflowY: 'scroll', // Always show scrollbar
+          overflowX: 'hidden',
           WebkitOverflowScrolling: 'touch',
-          overflowY: 'auto',
-          minHeight: 0
+          scrollbarGutter: 'stable',
+          paddingBottom: '12px'
         }}
       >
         {loading && messages.length === 0 ? (
@@ -519,13 +646,13 @@ export function ChatPanel({
                 })}
               </React.Fragment>
             ))}
-            <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} style={{ height: '1px', width: '100%', flexShrink: 0 }} />
             </div>
         )}
       </div>
 
-      {/* Input (fixed at bottom) */}
-      <div className="border-t border-gray-200 px-4 py-4 bg-white shrink-0" style={{ flexShrink: 0, position: 'relative', zIndex: 10 }}>
+      {/* Input (fixed at bottom) - Fixed height row */}
+      <div className="border-t border-gray-200 px-4 py-3 bg-white" style={{ flexShrink: 0, flex: '0 0 auto', borderTop: '1px solid #e5e7eb' }}>
         <div className="flex items-center space-x-2">
           <input
             type="text"
@@ -540,7 +667,7 @@ export function ChatPanel({
             placeholder="Type a message..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={sending}
-            style={{ pointerEvents: 'auto', zIndex: 20 }}
+            style={{ height: '40px', minHeight: '40px' }}
           />
           <button
             onClick={sendMessage}

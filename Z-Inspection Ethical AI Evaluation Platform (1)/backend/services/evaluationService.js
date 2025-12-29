@@ -395,7 +395,8 @@ async function computeScores(projectId, userId = null, questionnaireKey = null) 
       const scoresByPrinciple = {};
       const allScores = [];
 
-      // Group answers by principle
+      // Group answers by principle and build byQuestion array
+      const byQuestion = [];
       for (const answer of group.answers) {
         const question = await Question.findById(answer.questionId);
         if (!question) continue;
@@ -406,6 +407,15 @@ async function computeScores(projectId, userId = null, questionnaireKey = null) 
         }
         scoresByPrinciple[principle].push(answer.score);
         allScores.push(answer.score);
+        
+        // Add to byQuestion array for analytics
+        byQuestion.push({
+          questionId: answer.questionId,
+          principleKey: principle,
+          score: answer.score,
+          weight: question.weight || 1,
+          isNA: answer.score === null || answer.score === undefined || isNaN(answer.score)
+        });
       }
 
       // Calculate averages
@@ -436,7 +446,8 @@ async function computeScores(projectId, userId = null, questionnaireKey = null) 
           max: Math.max(...allScores),
           n: allScores.length
         },
-        byPrinciple
+        byPrinciple,
+        byQuestion // Store per-question scores for analytics
       };
 
       // Save or update score

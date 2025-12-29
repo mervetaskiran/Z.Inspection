@@ -34,7 +34,7 @@ router.get('/test-api-key', async (req, res) => {
   }
 });
 
-// POST /api/reports/generate - Generate AI report
+// POST /api/reports/generate - Generate AI report (legacy)
 router.post('/generate', reportController.generateReport);
 
 // POST /api/reports/generate-dashboard-narrative - Generate dashboard narrative synthesis
@@ -86,6 +86,12 @@ router.get('/:id/download', reportController.downloadReportPDF);
 
 // GET /api/reports/:id/download-docx - Download report as DOCX (Word) (must be before /:id route)
 router.get('/:id/download-docx', reportController.downloadReportDOCX);
+
+// GET /api/reports/:id/download-pdf - Download report as PDF (dashboard style) (must be before /:id route)
+router.get('/:id/download-pdf', reportController.downloadPDFReport);
+
+// GET /api/reports/:id/file - Serve stored report file (must be before /:id route)
+router.get('/:id/file', reportController.getReportFile);
 
 // GET /api/reports/:id - Get specific report
 router.get('/:id', reportController.getReportById);

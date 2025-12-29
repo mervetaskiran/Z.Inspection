@@ -10,6 +10,7 @@ import { AddTensionModal } from './AddTensionModal';
 import { ChatPanel } from './ChatPanel';
 import { fetchUserProgress } from '../utils/userProgress';
 import { api } from '../api';
+import { Spinner } from './Spinner';
 
 interface ProjectDetailProps {
   project: Project;
@@ -49,7 +50,7 @@ export function ProjectDetail({
   initialChatUserId,
   initialTab = 'evaluation',
 }: ProjectDetailProps) {
-  const [activeTab, setActiveTab] = useState<'evaluation' | 'tensions' | 'usecase' | 'owners'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'evaluation' | 'tensions' | 'usecase' | 'owners' | 'dashboard'>(initialTab as any);
   const [showAddTension, setShowAddTension] = useState(false);
   const [tensions, setTensions] = useState<Tension[]>([]); 
   // Yeni: Bağlı Use Case verisini tutacak state
@@ -64,6 +65,7 @@ export function ProjectDetail({
   const previousProgressRef = useRef<number>(project.progress || 0);
   const [memberProgresses, setMemberProgresses] = useState<Record<string, number>>({});
   const [evolutionCompletedAt, setEvolutionCompletedAt] = useState<string | null>(null);
+  const [latestReport, setLatestReport] = useState<{ id: string; fileUrl: string; title: string } | null>(null);
 
   // Calculate assignedUserDetails early to avoid "before initialization" error
   const assignedUserDetails = users
@@ -511,6 +513,20 @@ export function ProjectDetail({
       if (response.ok) {
         const result = await response.json();
         alert('✅ Report generated successfully!');
+        // Refresh latest report
+        const projectId = project.id || (project as any)._id;
+        try {
+          const reportResponse = await api.get(`/projects/${projectId}/reports/latest`);
+          if (reportResponse.data?.report) {
+            setLatestReport({
+              id: reportResponse.data.report._id,
+              fileUrl: reportResponse.data.report.fileUrl || `/api/reports/${reportResponse.data.report._id}/file`,
+              title: reportResponse.data.report.title
+            });
+          }
+        } catch (err) {
+          console.warn('Could not fetch latest report after generation');
+        }
       } else {
         const error = await response.json();
         alert('❌ Error: ' + (error.error || 'Failed to generate report'));
@@ -640,6 +656,16 @@ export function ProjectDetail({
                 </button>
               );
             })()}
+            {latestReport && (
+              <a
+                href={latestReport.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors ml-2 inline-block"
+              >
+                Show Report
+              </a>
+            )}
             {isAssigned && progressDisplay === 0 && (
               <button onClick={onStartEvaluation} className="px-4 py-2 text-white rounded-lg hover:opacity-90" style={{ backgroundColor: roleColor }}>
                 Start Evaluation
@@ -660,24 +686,65 @@ export function ProjectDetail({
       </div>
 
       <div className="px-6 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-           <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
-            <Calendar className="h-5 w-5 text-gray-400 mr-3" />
-            <div><div className="text-xs text-gray-600">Target Date</div><div className="text-sm font-medium">{new Date(project.targetDate).toLocaleDateString()}</div></div>
-          </div>
-          <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
-            <UsersIcon className="h-5 w-5 text-gray-400 mr-3" />
-            <div><div className="text-xs text-gray-600">Team</div><div className="text-sm font-medium">{assignedUserDetails.length} members</div></div>
-          </div>
-          <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
-            <Target className="h-5 w-5 text-gray-400 mr-3" />
-            <div><div className="text-xs text-gray-600">Progress</div><div className="text-sm font-medium">{Math.round(displayProgress)}%</div></div>
-          </div>
-          <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
-            <BarChart3 className="h-5 w-5 text-gray-400 mr-3" />
-            <div><div className="text-xs text-gray-600">Tensions</div><div className="text-sm font-medium">{tensions.length} total</div></div>
-          </div>
-        </div>
+        {/* Project Details Summary Cards with Blue Theme */}
+        {(() => {
+          const cardThemes = {
+            targetDate: { color: "text-blue-600", Icon: Calendar },
+            team: { color: "text-blue-600", Icon: UsersIcon },
+            progress: { color: "text-blue-600", Icon: Target },
+            tensions: { color: "text-blue-600", Icon: BarChart3 }
+          };
+          
+          const TargetDateIcon = cardThemes.targetDate.Icon;
+          const TeamIcon = cardThemes.team.Icon;
+          const ProgressIcon = cardThemes.progress.Icon;
+          const TensionsIcon = cardThemes.tensions.Icon;
+          
+          const progressValue = Math.round(displayProgress);
+          const isProgressComplete = progressValue >= 100;
+          
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              {/* Target Date Card */}
+              <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
+                <TargetDateIcon className={`h-5 w-5 ${cardThemes.targetDate.color} mr-3`} />
+                <div>
+                  <div className={`text-sm font-semibold ${cardThemes.targetDate.color}`}>Target Date</div>
+                  <div className="text-sm font-medium text-gray-900">{new Date(project.targetDate).toLocaleDateString()}</div>
+                </div>
+              </div>
+              
+              {/* Team Card */}
+              <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
+                <TeamIcon className={`h-5 w-5 ${cardThemes.team.color} mr-3`} />
+                <div>
+                  <div className={`text-sm font-semibold ${cardThemes.team.color}`}>Team</div>
+                  <div className="text-sm font-medium text-gray-900">{assignedUserDetails.length} members</div>
+                </div>
+              </div>
+              
+              {/* Progress Card */}
+              <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
+                <ProgressIcon className={`h-5 w-5 ${cardThemes.progress.color} mr-3`} />
+                <div>
+                  <div className={`text-sm font-semibold ${cardThemes.progress.color}`}>Progress</div>
+                  <div className={`text-sm font-medium ${isProgressComplete ? 'text-emerald-600' : 'text-gray-900'}`}>
+                    {progressValue}%
+                  </div>
+                </div>
+              </div>
+              
+              {/* Tensions Card */}
+              <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center">
+                <TensionsIcon className={`h-5 w-5 ${cardThemes.tensions.color} mr-3`} />
+                <div>
+                  <div className={`text-sm font-semibold ${cardThemes.tensions.color}`}>Tensions</div>
+                  <div className="text-sm font-medium text-gray-900">{tensions.length} total</div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Assigned Members with Contact button */}
         <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
@@ -753,7 +820,7 @@ export function ProjectDetail({
                   onClick={() => setActiveTab(tab as any)}
                   className={`px-6 py-3 text-sm capitalize flex items-center ${activeTab === tab ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                  {tab === 'tensions' ? `Tensions (${tensions.length})` : tab}
+                  {tab === 'tensions' ? `Tensions (${tensions.length})` : tab === 'dashboard' ? 'Analytics' : tab}
                 </button>
               );
             })}
@@ -1002,6 +1069,22 @@ export function ProjectDetail({
               </div>
             )}
             
+            {activeTab === 'dashboard' && (
+              <AnalyticsDashboard 
+                projectId={project.id} 
+                questionnaireKey="general-v1"
+                currentUser={currentUser}
+              />
+            )}
+
+            {activeTab === 'dashboard' && (
+              <AnalyticsDashboard 
+                projectId={project.id} 
+                questionnaireKey="general-v1"
+                currentUser={currentUser}
+              />
+            )}
+
             {activeTab === 'owners' && canViewOwners && onViewOwner && (
                <UseCaseOwners currentUser={currentUser} projects={[project]} users={users} onViewOwner={onViewOwner} />
             )}
@@ -1013,8 +1096,8 @@ export function ProjectDetail({
       {generating && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
-            <div className="flex items-center space-x-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="flex items-center gap-2.5" role="status" aria-live="polite">
+              <Spinner size={20} strokeWidth={2.5} className="flex-shrink-0" />
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Generating Report</h3>
                 <p className="text-sm text-gray-600 mt-1">Your report is being generated. Please wait...</p>

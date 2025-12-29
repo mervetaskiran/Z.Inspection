@@ -7,6 +7,14 @@ const PrincipleScoreSchema = new mongoose.Schema({
   max: Number
 }, { _id: false });
 
+const QuestionScoreSchema = new mongoose.Schema({
+  questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', required: true },
+  principleKey: { type: String, required: true },
+  score: { type: Number, required: true }, // 0-4 scale
+  weight: { type: Number, default: 1 }, // Optional question weight
+  isNA: { type: Boolean, default: false } // Whether this was marked as N/A
+}, { _id: false });
+
 const ScoreSchema = new mongoose.Schema({
   projectId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -49,7 +57,8 @@ const ScoreSchema = new mongoose.Schema({
     'DIVERSITY, NON-DISCRIMINATION & FAIRNESS': PrincipleScoreSchema,
     'SOCIETAL & INTERPERSONAL WELL-BEING': PrincipleScoreSchema,
     ACCOUNTABILITY: PrincipleScoreSchema
-  }
+  },
+  byQuestion: [QuestionScoreSchema] // Array of per-question scores for top risky questions analysis
 }, {
   timestamps: true
 });

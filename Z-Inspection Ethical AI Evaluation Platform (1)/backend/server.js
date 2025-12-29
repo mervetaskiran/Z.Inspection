@@ -5027,6 +5027,23 @@ app.use('/api/evaluations', evaluationRoutes);
 const reportRoutes = require('./routes/reportRoutes');
 app.use('/api/reports', reportRoutes);
 
+// Professional Report Generation (new structured approach)
+// POST /api/projects/:projectId/reports/generate?questionnaireKey=general-v1
+const reportController = require('./controllers/reportController');
+app.post('/api/projects/:projectId/reports/generate', reportController.generateProfessionalReport);
+
+// PDF Dashboard Report Generation
+// POST /api/projects/:projectId/reports/generate-pdf?questionnaireKey=general-v1
+app.post('/api/projects/:projectId/reports/generate-pdf', reportController.generatePDFReport);
+
+// Analytics Endpoint
+// GET /api/projects/:projectId/analytics?questionnaireKey=general-v1
+app.get('/api/projects/:projectId/analytics', reportController.getProjectAnalytics);
+
+// Latest Report Endpoint
+// GET /api/projects/:projectId/reports/latest
+app.get('/api/projects/:projectId/reports/latest', reportController.getLatestReport);
+
 // Health check endpoint for deployment platforms
 app.get('/api/health', (req, res) => {
   res.json({ 

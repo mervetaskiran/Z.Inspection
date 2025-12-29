@@ -57,9 +57,38 @@ const ReportSchema = new mongoose.Schema({
     totalTensions: Number,
     principlesAnalyzed: [String]
   },
+  // New structured report data
+  computedMetrics: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  geminiNarrative: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  questionnaireKey: {
+    type: String,
+    index: true
+  },
   version: {
     type: Number,
     default: 1
+  },
+  // File storage metadata
+  fileUrl: {
+    type: String // Path or URL to stored PDF/DOCX file
+  },
+  filePath: {
+    type: String // Local file system path (if stored locally)
+  },
+  mimeType: {
+    type: String,
+    enum: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    default: 'application/pdf'
+  },
+  fileSize: {
+    type: Number // Size in bytes
+  },
+  hash: {
+    type: String // Content hash for versioning/deduplication
   }
 }, {
   timestamps: true

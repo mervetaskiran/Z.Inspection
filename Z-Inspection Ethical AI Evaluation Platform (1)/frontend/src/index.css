@@ -2699,3 +2699,51 @@ html {
     height: 0;
   }
 }
+
+/* Chat Messages Scrollbar - Always visible and styled */
+.chat-messages-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.chat-messages-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Chat Conversations List Scrollbar - Smaller and styled */
+.chat-conversations-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.chat-conversations-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-conversations-scroll::-webkit-scrollbar-track {
+  background: #f9fafb;
+  border-radius: 3px;
+}
+
+.chat-conversations-scroll::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.chat-conversations-scroll::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

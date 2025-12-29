@@ -1124,9 +1124,337 @@ IMPORTANT:
    EXPORTS
 ============================================================ */
 
+/* ============================================================
+   7. REPORT NARRATIVE GENERATOR (STRICT, GROUNDED)
+============================================================ */
+
+async function generateReportNarrative(reportMetrics) {
+  // Validate input
+  if (!reportMetrics || typeof reportMetrics !== 'object') {
+    throw new Error('reportMetrics must be an object');
+  }
+
+  const inputJson = JSON.stringify(reportMetrics, null, 2);
+
+  const systemInstruction = `You are an AI assistant used STRICTLY as a narrative synthesis tool
+within an Ethical AI Evaluation Platform based on the Z-Inspection methodology.
+
+==============================
+ABSOLUTE CONSTRAINTS
+==============================
+
+- You MUST NOT compute, recalculate, infer, normalize, or modify any numerical score.
+- You MUST NOT invent risks, evidence, expert opinions, mitigations, or use-case details.
+- You MUST NOT override or reinterpret expert intent.
+- You MUST NOT treat your output as binding, final, or authoritative.
+- You MUST NOT generalize beyond the provided data.
+- You MUST NOT invent system/use-case details that are not present in the reportMetrics JSON.
+- If a field is missing, explicitly state "Not provided" or "No evidence attached".
+- All numeric metrics MUST come from reportMetrics JSON - never compute them.
+
+==============================
+AUTHORITATIVE DATA SOURCES
+==============================
+
+You will receive a reportMetrics JSON object that contains:
+1) project: basic project info (title, category, createdAt, questionnaireKey)
+2) coverage: team participation metrics (assignedExpertsCount, expertsStartedCount, etc.)
+3) scoring: ALL quantitative scores from MongoDB 'scores' collection
+   - totalsOverall: aggregated overall scores
+   - byPrincipleOverall: per-principle aggregates with riskPct, safePct
+   - byRole: role-specific aggregates
+4) topRiskDrivers: questions with lowest avgRiskScore, including answer excerpts
+5) tensions: summary stats and detailed list with evidence, mitigation, consensus
+
+==============================
+CRITICAL GROUNDING RULES
+==============================
+
+EVERY major conclusion or claim you make MUST be grounded in at least ONE of:
+- A specific score from scoring.byPrincipleOverall or scoring.totalsOverall
+- A specific question from topRiskDrivers.questions
+- A specific tension from tensions.list
+- A specific answer excerpt from topRiskDrivers.questions[].answerExcerpts
+
+If grounding is NOT possible, explicitly state:
+"There is insufficient evidence in the current data to support this conclusion."
+
+Do NOT make unsupported assertions. Every insight must trace back to the provided data.
+
+==============================
+EVIDENCE INTEGRITY
+==============================
+
+- Tension evidence shown MUST come from tensions.list[].evidence.items[]
+- If tension.evidence.count = 0 => state "No evidence attached"
+- Never fabricate evidence or evidence types
+- Use evidenceType from evidence items exactly as provided
+
+==============================
+YOUR TASK
+==============================
+
+Generate a structured JSON narrative that:
+1) Explains findings using ONLY numbers from reportMetrics
+2) References specific questions, principles, and tensions
+3) Highlights evidence gaps explicitly ("No evidence attached" when count = 0)
+4) Provides actionable recommendations linked to specific data points
+5) Acknowledges limitations and missing data
+
+==============================
+OUTPUT FORMAT (JSON ONLY)
+==============================
+
+Return a JSON object with this EXACT structure:
+
+{
+  "executiveSummary": [
+    "Bullet point 1 (grounded in scoring.totalsOverall or principle scores)",
+    "Bullet point 2 (grounded in topRiskDrivers or tensions.summary)",
+    "Bullet point 3 (grounded in coverage or specific findings)"
+  ],
+  "principleFindings": [
+    {
+      "principle": "TRANSPARENCY | HUMAN AGENCY & OVERSIGHT | etc.",
+      "whatLooksGood": ["Specific positive finding from scores or excerpts"],
+      "keyRisks": ["Specific risk from scores < 2.0 or topRiskDrivers"],
+      "evidenceFromData": ["Quote or reference to answerExcerpts or scores"],
+      "recommendedActions": ["Actionable step linked to specific question or principle"]
+    }
+  ],
+  "topRiskDriversNarrative": [
+    {
+      "questionId": "from topRiskDrivers.questions[].questionId",
+      "principle": "from topRiskDrivers.questions[].principle",
+      "whyRisky": "Explanation using avgRiskScore and answerExcerpts",
+      "recommendedAction": "Concrete action",
+      "noteOnEvidence": "Reference to answerExcerpts or 'No evidence provided'"
+    }
+  ],
+  "tensionsNarrative": [
+    {
+      "tensionId": "from tensions.list[].tensionId",
+      "summary": "Brief summary of claim and conflict",
+      "whyItMatters": "Impact based on impactDescription and affectedGroups",
+      "evidenceStatus": "Evidence attached | No evidence attached (from evidence.count)",
+      "mitigationAssessment": "Assessment of mitigation fields (or 'No mitigation proposed')",
+      "nextStep": "Actionable next step based on reviewState and consensus"
+    }
+  ],
+  "recommendations": [
+    {
+      "title": "Specific recommendation title",
+      "priority": "High | Med | Low",
+      "ownerRole": "Role responsible (or 'Project team')",
+      "timeline": "Suggested timeline",
+      "successMetric": "How to measure success",
+      "linkedTo": ["principle:TRANSPARENCY", "tension:...", "question:..."]
+    }
+  ],
+  "limitations": [
+    "Missing data explicitly listed (e.g., 'No evidence attached for tension X')",
+    "Evidence gaps (e.g., 'X tensions lack evidence')",
+    "Role-specific question comparability warning if applicable"
+  ],
+  "appendixNotes": [
+    "Glossary notes (risk score meaning, severity meaning)",
+    "Data snapshot info (scores.computedAt timestamps)"
+  ]
+}
+
+==============================
+OUTPUT RULES
+==============================
+
+- Use ONLY numbers from reportMetrics JSON
+- Ground every insight in at least one data point
+- Do NOT generate tables or markdown
+- Do NOT restate raw JSON
+- Do NOT exaggerate or speculate
+- If information is missing, explicitly state "Not provided" or "No evidence attached"
+- Answer excerpts must be used verbatim or with clear attribution
+- Do NOT invent use-case/domain details; use only project fields given
+
+==============================
+FINAL REMINDER
+==============================
+
+You are NOT an evaluator.
+You are NOT a scoring engine.
+You are NOT a decision-maker.
+
+You are a narrative assistant that explains deterministic ethical evaluation results,
+analyzes expert responses and question patterns,
+and highlights where human deliberation is required.
+
+Your output is advisory, explanatory, and non-binding.`;
+
+  // Build evaluator context for prompt
+  const evaluatorContext = reportMetrics.evaluators ? `
+EVALUATORS (Actual assigned and submitted):
+- Assigned: ${reportMetrics.evaluators.assigned.length} expert(s)
+  ${reportMetrics.evaluators.assigned.map(e => `  - ${e.name} (${e.role})`).join('\n')}
+- Submitted: ${reportMetrics.evaluators.submitted.length} expert(s)
+  ${reportMetrics.evaluators.submitted.map(e => `  - ${e.name} (${e.role})`).join('\n')}
+- With Scores: ${reportMetrics.evaluators.withScores.length} expert(s)
+  ${reportMetrics.evaluators.withScores.map(e => `  - ${e.name} (${e.role})`).join('\n')}
+
+CRITICAL: Report tables must ONLY include evaluators listed in "withScores" above.
+Do NOT reference "Expert 1/2" or "Medical Expert 3/4" - use actual names from the list above.
+` : '';
+
+  const userPrompt = `INPUT DATA (reportMetrics JSON):
+${inputJson}
+
+${evaluatorContext}
+--------------------------------------------------
+
+OUTPUT REQUIREMENTS:
+- Output MUST be valid JSON only (no markdown, no explanations, no extra text)
+- Do NOT include assumptions beyond the input
+- Ensure all string values are properly escaped
+- Ground EVERY insight in at least one data point from the input
+- If tension evidence count = 0 => state "No evidence attached"
+- Do NOT invent use-case/domain details; use only project fields given
+- Use ONLY evaluator names from evaluators.withScores list - never use generic labels like "Expert 1/2"
+- If general assessment answers are missing => state "Missing / Not provided" and list missing fields
+- NEVER print the literal string "undefined" - use "Not provided" or "Missing" instead
+
+FIELD VALIDATION:
+- priority MUST be exactly one of: "High", "Med", "Low"
+- evidenceStatus MUST be exactly one of: "Evidence attached", "No evidence attached"
+- principle MUST match one of the 7 Z-Inspection principles
+
+REQUIRED FIELDS:
+- executiveSummary (array of strings)
+- principleFindings (array of objects)
+- topRiskDriversNarrative (array of objects)
+- tensionsNarrative (array of objects)
+- recommendations (array of objects)
+- limitations (array of strings)
+- appendixNotes (array of strings)
+
+IMPORTANT:
+- Return ONLY the JSON object, nothing else
+- Do not include markdown code blocks (\`\`\`json)
+- Do not include explanatory text before or after the JSON
+- Ensure JSON is valid and parseable
+- Every claim must reference specific scores, questions, or excerpts from reportMetrics
+- Use actual evaluator names from evaluators.withScores, not generic labels`;
+
+  const modelNamesToTry = [
+    "models/gemini-2.5-flash",
+    "gemini-2.5-flash"
+  ];
+
+  const narrativeConfig = {
+    temperature: 0.3, // Lower temperature for more consistent, grounded output
+    topP: 0.95,
+    topK: 40,
+    maxOutputTokens: 8192
+  };
+
+  let lastError = null;
+
+  for (const modelName of modelNamesToTry) {
+    try {
+      console.log(`🤖 Gemini (${modelName}) generating report narrative...`);
+
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction
+      });
+
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        generationConfig: narrativeConfig
+      });
+
+      let rawResponse = result.response.text();
+
+      if (!rawResponse) {
+        throw new Error("❌ Gemini returned empty response.");
+      }
+
+      // Clean up response - remove markdown code blocks if present
+      rawResponse = rawResponse.trim();
+      if (rawResponse.startsWith('```json')) {
+        rawResponse = rawResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (rawResponse.startsWith('```')) {
+        rawResponse = rawResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+      rawResponse = rawResponse.trim();
+
+      // Try to find JSON object if there's extra text
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        rawResponse = jsonMatch[0];
+      }
+
+      // Parse JSON
+      let narrative;
+      try {
+        narrative = JSON.parse(rawResponse);
+      } catch (parseError) {
+        console.error('❌ JSON parse error:', parseError.message);
+        console.error('Raw response:', rawResponse.substring(0, 500));
+        throw new Error(`JSON parse error: ${parseError.message}`);
+      }
+
+      // Basic validation
+      if (!Array.isArray(narrative.executiveSummary)) {
+        throw new Error('Invalid response: executiveSummary must be an array');
+      }
+      if (!Array.isArray(narrative.principleFindings)) {
+        throw new Error('Invalid response: principleFindings must be an array');
+      }
+      if (!Array.isArray(narrative.tensionsNarrative)) {
+        throw new Error('Invalid response: tensionsNarrative must be an array');
+      }
+      if (!Array.isArray(narrative.recommendations)) {
+        throw new Error('Invalid response: recommendations must be an array');
+      }
+      if (!Array.isArray(narrative.limitations)) {
+        throw new Error('Invalid response: limitations must be an array');
+      }
+
+      console.log(`✅ Report narrative successfully generated (${modelName}).`);
+      return narrative;
+
+    } catch (error) {
+      console.error(`❌ Model ${modelName} failed:`, error.message);
+      lastError = error;
+      
+      if (!error.message.includes("404") && !error.message.includes("not found") && !error.message.includes("JSON")) {
+        break;
+      }
+    }
+  }
+
+  if (lastError) {
+    const errorMsg = lastError.message || '';
+    const errorMsgLower = errorMsg.toLowerCase();
+    
+    if (errorMsg.includes("400") || errorMsgLower.includes("expired") || errorMsgLower.includes("api_key_invalid")) {
+      throw new Error("❌ Gemini API Key expired or invalid.");
+    }
+    if (errorMsg.includes("403") || errorMsgLower.includes("permission_denied")) {
+      throw new Error("❌ Gemini API Key invalid or unauthorized.");
+    }
+    if (errorMsg.includes("429") || errorMsgLower.includes("resource_exhausted") || errorMsgLower.includes("quota")) {
+      throw new Error("❌ Gemini API quota exceeded. Please try again later.");
+    }
+    
+    throw new Error(`❌ Report narrative generation failed: ${lastError.message}`);
+  }
+
+  throw new Error("❌ Report narrative generation failed: Unknown error.");
+}
+
 module.exports = {
   generateReport,
   analyzeExpertComments,
   generateDashboardNarrative,
+  generateReportNarrative,
   testApiKey
 };

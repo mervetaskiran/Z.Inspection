@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
-const { generateReport, generateDashboardNarrative } = require('../services/geminiService');
+const { generateReport, generateDashboardNarrative, generateReportNarrative } = require('../services/geminiService');
 const { generatePDFFromMarkdown } = require('../services/pdfService');
 const { generateDOCXFromMarkdown } = require('../services/docxService');
+const { generateProfessionalDOCX } = require('../services/professionalDocxService');
+const { buildReportMetrics } = require('../services/reportMetricsService');
+const { generatePDFReport: generatePDFReportService, generateAndSavePDFReport } = require('../services/pdfReportService');
+const { getProjectAnalytics } = require('../services/analyticsService');
 
 // Helper function for ObjectId validation (compatible with Mongoose v9+)
 const isValidObjectId = (id) => {
@@ -607,6 +611,7 @@ exports.downloadReportPDF = async (req, res) => {
 /**
  * GET /api/reports/:id/download-docx
  * Download report as DOCX (Word)
+ * Uses new professional DOCX generator if report has computedMetrics, otherwise falls back to markdown
  */
 exports.downloadReportDOCX = async (req, res) => {
   try {
@@ -614,7 +619,7 @@ exports.downloadReportDOCX = async (req, res) => {
     const { userIdObj, roleCategory } = await loadRequestUser(req);
 
     const report = await Report.findById(id)
-      .select('title projectId content')
+      .select('title projectId content computedMetrics geminiNarrative generatedAt')
       .populate('projectId', 'title')
       .lean();
 
@@ -636,10 +641,27 @@ exports.downloadReportDOCX = async (req, res) => {
 
     console.log('📝 Generating DOCX for report:', id);
 
-    const docxBuffer = await generateDOCXFromMarkdown(
-      buildExportMarkdownFromReport(report),
-      report.title
-    );
+    let docxBuffer;
+    
+    // Use new professional DOCX generator if report has computedMetrics
+    if (report.computedMetrics && report.geminiNarrative) {
+      console.log('Using professional DOCX generator with metrics and narrative');
+      
+      // Use regenerated chart buffers if available
+      docxBuffer = await generateProfessionalDOCX(
+        report.computedMetrics,
+        report.geminiNarrative,
+        report.generatedAt ? new Date(report.generatedAt) : new Date(),
+        chartBuffers
+      );
+    } else {
+      // Fallback to markdown-based DOCX for legacy reports
+      console.log('Using legacy markdown-based DOCX generator');
+      docxBuffer = await generateDOCXFromMarkdown(
+        buildExportMarkdownFromReport(report),
+        report.title
+      );
+    }
 
     const fileName = `${report.title.replace(/[^a-z0-9]/gi, '_')}_${id}.docx`;
 
@@ -791,6 +813,153 @@ exports.finalizeReport = async (req, res) => {
   } catch (err) {
     console.error('Error finalizing report:', err);
     res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/projects/:projectId/reports/generate
+ * Generate professional report with deterministic metrics and narrative
+ * Query param: questionnaireKey (default: 'general-v1')
+ */
+exports.generateProfessionalReport = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { questionnaireKey = 'general-v1' } = req.query;
+    const { user, userIdObj, roleCategory } = await loadRequestUser(req);
+
+    if (roleCategory !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can generate reports.' });
+    }
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+
+    console.log(`📊 Generating professional report for project: ${projectId}, questionnaire: ${questionnaireKey}`);
+
+    // Step 1: Build deterministic reportMetrics (NO LLM)
+    console.log('📈 Building report metrics from MongoDB...');
+    const reportMetrics = await buildReportMetrics(projectId, questionnaireKey);
+
+    // Extract chart buffers before saving (they're too large for MongoDB)
+    const chartBuffers = reportMetrics._chartBuffers || null;
+    // Remove _chartBuffers from reportMetrics before saving (clean JSON)
+    delete reportMetrics._chartBuffers;
+
+    // Step 2: Generate narrative using Gemini (strict guardrails)
+    console.log('🤖 Generating narrative with Gemini...');
+    const geminiNarrative = await generateReportNarrative(reportMetrics);
+
+    // Step 3: Save report to database
+    const projectIdObj = isValidObjectId(projectId)
+      ? new mongoose.Types.ObjectId(projectId)
+      : projectId;
+
+    const report = new Report({
+      projectId: projectIdObj,
+      useCaseId: projectIdObj,
+      title: `Ethical AI Evaluation Report - ${reportMetrics.project.title || 'Project'}`,
+      computedMetrics: reportMetrics,
+      geminiNarrative: geminiNarrative,
+      questionnaireKey: questionnaireKey,
+      generatedBy: userIdObj,
+      status: 'draft',
+      metadata: {
+        totalScores: reportMetrics.scoring.totalsOverall?.count || 0,
+        totalTensions: reportMetrics.tensions.summary.total,
+        principlesAnalyzed: Object.keys(reportMetrics.scoring.byPrincipleOverall),
+        chartsGenerated: chartBuffers ? Object.keys(chartBuffers).filter(k => chartBuffers[k] !== null).length : 0
+      }
+    });
+
+    await report.save();
+    
+    // Store chart buffers separately (in memory cache or file system)
+    // For now, we'll regenerate charts on-demand during DOCX generation
+    // In production, consider storing in file system or Redis cache
+    report._chartBuffers = chartBuffers;
+
+    console.log('✅ Professional report generated and saved:', report._id);
+
+    // Notify assigned experts (non-blocking)
+    try {
+      const Message = mongoose.model('Message');
+      const Project = mongoose.model('Project');
+      const project = await Project.findById(projectIdObj).select('assignedUsers').lean();
+      
+      if (project && project.assignedUsers && project.assignedUsers.length > 0) {
+        const assignedUserIds = project.assignedUsers
+          .map(id => {
+            const idStr = id.toString ? id.toString() : String(id);
+            return isValidObjectId(idStr) ? new mongoose.Types.ObjectId(idStr) : id;
+          })
+          .filter(id => {
+            if (userIdObj) {
+              const idStr = id.toString ? id.toString() : String(id);
+              const userIdStr = userIdObj.toString ? userIdObj.toString() : String(userIdObj);
+              return idStr !== userIdStr;
+            }
+            return true;
+          });
+
+        if (assignedUserIds.length > 0) {
+          const projectTitle = reportMetrics.project.title || 'Project';
+          const notificationText = `[NOTIFICATION] A new professional report has been generated for project "${projectTitle}". You can review it in the Reports section.`;
+          
+          await Promise.all(
+            assignedUserIds.map(assignedUserId =>
+              Message.create({
+                projectId: projectIdObj,
+                fromUserId: userIdObj || assignedUserId,
+                toUserId: assignedUserId,
+                text: notificationText,
+                isNotification: true,
+                createdAt: new Date(),
+                readAt: null,
+              })
+            )
+          );
+          
+          console.log(`📬 Notifications sent to ${assignedUserIds.length} assigned expert(s)`);
+        }
+      }
+    } catch (notificationError) {
+      console.error('⚠️ Error sending notifications:', notificationError);
+    }
+
+    res.json({
+      success: true,
+      report: {
+        id: report._id,
+        title: report.title,
+        generatedAt: report.generatedAt,
+        questionnaireKey: report.questionnaireKey,
+        status: report.status
+      }
+    });
+  } catch (err) {
+    console.error('❌ Error generating professional report:', err);
+    console.error('❌ Error stack:', err.stack);
+    
+    let errorMessage = err.message || 'Failed to generate report';
+    
+    if (err.message && (err.message.includes('404') || err.message.includes('NOT_FOUND'))) {
+      if (!errorMessage.includes('Gemini API')) {
+        errorMessage = 'Gemini API model not found. Please check API key and model availability. ' + errorMessage;
+      }
+    } else if (err.message && (err.message.includes('API key') || err.message.includes('PERMISSION_DENIED'))) {
+      if (!errorMessage.includes('API Key')) {
+        errorMessage = 'Invalid Gemini API key. Please check your API key. ' + errorMessage;
+      }
+    } else if (err.message && (err.message.includes('429') || err.message.includes('RESOURCE_EXHAUSTED'))) {
+      errorMessage = 'API quota exceeded. Please try again later.';
+    }
+    
+    res.status(500).json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      originalError: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 };
 
@@ -1024,6 +1193,260 @@ exports.generateDashboardNarrative = async (req, res) => {
       success: false,
       error: err.message || 'Failed to generate dashboard narrative'
     });
+  }
+};
+
+/**
+ * GET /api/projects/:projectId/analytics
+ * Get analytics data for dashboard and report generation
+ * Query param: questionnaireKey (default: 'general-v1')
+ */
+exports.getProjectAnalytics = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { questionnaireKey = 'general-v1' } = req.query;
+    const { userIdObj, roleCategory } = await loadRequestUser(req);
+
+    // Authorization: admin can view all. Expert/Viewer can view assigned projects.
+    if (roleCategory !== 'admin') {
+      const projectIdObj = isValidObjectId(projectId)
+        ? new mongoose.Types.ObjectId(projectId)
+        : projectId;
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(projectIdObj)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to view analytics for this project.' });
+      }
+    }
+
+    console.log(`📊 Fetching analytics for project: ${projectId}, questionnaire: ${questionnaireKey}`);
+
+    const analytics = await getProjectAnalytics(projectId, questionnaireKey);
+
+    res.json(analytics);
+  } catch (err) {
+    console.error('Error fetching analytics:', err);
+    res.status(err.statusCode || 500).json({ 
+      error: err.message || 'Failed to fetch analytics' 
+    });
+  }
+};
+
+/**
+ * POST /api/projects/:projectId/reports/generate-pdf
+ * Generate professional PDF report with dashboard layout
+ * Query param: questionnaireKey (default: 'general-v1')
+ */
+exports.generatePDFReport = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { questionnaireKey = 'general-v1' } = req.query;
+    const { user, userIdObj, roleCategory } = await loadRequestUser(req);
+
+    if (roleCategory !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can generate PDF reports.' });
+    }
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+
+    console.log(`📊 Generating PDF dashboard report for project: ${projectId}, questionnaire: ${questionnaireKey}`);
+
+    // Generate PDF report
+    const pdfBuffer = await generatePDFReportService(projectId, questionnaireKey, {
+      generatedAt: new Date()
+    });
+
+    // Save report to database
+    const report = await generateAndSavePDFReport(projectId, questionnaireKey, userIdObj, {
+      generatedAt: new Date()
+    });
+
+    console.log('✅ PDF report generated and saved:', report._id);
+
+    // Return PDF for download
+    const fileName = `${report.title.replace(/[^a-z0-9]/gi, '_')}_${report._id}.pdf`;
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('❌ Error generating PDF report:', err);
+    console.error('❌ Error stack:', err.stack);
+    
+    let errorMessage = err.message || 'Failed to generate PDF report';
+    
+    if (err.message && (err.message.includes('404') || err.message.includes('NOT_FOUND'))) {
+      if (!errorMessage.includes('Gemini API')) {
+        errorMessage = 'Gemini API model not found. Please check API key and model availability. ' + errorMessage;
+      }
+    } else if (err.message && (err.message.includes('API key') || err.message.includes('PERMISSION_DENIED'))) {
+      if (!errorMessage.includes('API Key')) {
+        errorMessage = 'Invalid Gemini API key. Please check your API key. ' + errorMessage;
+      }
+    } else if (err.message && (err.message.includes('429') || err.message.includes('RESOURCE_EXHAUSTED'))) {
+      errorMessage = 'API quota exceeded. Please try again later.';
+    }
+    
+    res.status(500).json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      originalError: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
+
+/**
+ * GET /api/reports/:id/download-pdf
+ * Download existing PDF report
+ */
+exports.downloadPDFReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userIdObj, roleCategory } = await loadRequestUser(req);
+
+    const report = await Report.findById(id)
+      .select('title projectId computedMetrics geminiNarrative questionnaireKey generatedAt metadata')
+      .populate('projectId', 'title')
+      .lean();
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Authorization: admin can export all. Expert/Viewer can export assigned reports.
+    if (roleCategory !== 'admin') {
+      const projectIdObj = report?.projectId?._id || report?.projectId;
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(projectIdObj)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to download this report.' });
+      }
+    }
+
+    console.log('📄 Regenerating PDF for report:', id);
+
+    // Regenerate PDF (charts are generated on-demand)
+    const projectId = report.projectId?._id || report.projectId;
+    const questionnaireKey = report.questionnaireKey || report.computedMetrics?.project?.questionnaireKey || 'general-v1';
+    
+    const pdfBuffer = await generatePDFReportService(projectId, questionnaireKey, {
+      generatedAt: report.generatedAt ? new Date(report.generatedAt) : new Date()
+    });
+
+    const fileName = `${report.title.replace(/[^a-z0-9]/gi, '_')}_${id}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('Error generating PDF:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to generate PDF' });
+  }
+};
+
+/**
+ * GET /api/reports/:id/file
+ * Serve stored report file (PDF/DOCX)
+ */
+exports.getReportFile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userIdObj, roleCategory } = await loadRequestUser(req);
+
+    const report = await Report.findById(id)
+      .select('filePath fileUrl mimeType fileSize projectId')
+      .populate('projectId', 'title')
+      .lean();
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Authorization: admin can view all. Expert/Viewer can view assigned reports.
+    if (roleCategory !== 'admin') {
+      const projectIdObj = report?.projectId?._id || report?.projectId;
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(projectIdObj)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to view this report.' });
+      }
+    }
+
+    if (!report.filePath) {
+      return res.status(404).json({ error: 'Report file not found' });
+    }
+
+    const fs = require('fs').promises;
+    try {
+      const fileBuffer = await fs.readFile(report.filePath);
+      
+      res.setHeader('Content-Type', report.mimeType || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${report.projectId?.title || 'report'}.pdf"`);
+      res.setHeader('Content-Length', fileBuffer.length);
+      
+      res.send(fileBuffer);
+    } catch (fileError) {
+      console.error('Error reading report file:', fileError);
+      res.status(404).json({ error: 'Report file not found on disk' });
+    }
+  } catch (err) {
+    console.error('Error serving report file:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to serve report file' });
+  }
+};
+
+/**
+ * GET /api/projects/:projectId/reports/latest
+ * Get latest report for a project
+ */
+exports.getLatestReport = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { userIdObj, roleCategory } = await loadRequestUser(req);
+
+    // Authorization
+    if (roleCategory !== 'admin') {
+      const projectIdObj = isValidObjectId(projectId)
+        ? new mongoose.Types.ObjectId(projectId)
+        : projectId;
+      const ok = await isUserAssignedToProject({
+        userIdObj,
+        projectIdObj: toObjectIdOrValue(projectIdObj)
+      });
+      if (!ok) {
+        return res.status(403).json({ error: 'Not authorized to view reports for this project.' });
+      }
+    }
+
+    const projectIdObj = isValidObjectId(projectId)
+      ? new mongoose.Types.ObjectId(projectId)
+      : projectId;
+
+    const report = await Report.findOne({ projectId: projectIdObj })
+      .sort({ generatedAt: -1 })
+      .select('_id title generatedAt fileUrl status questionnaireKey')
+      .lean();
+
+    if (!report) {
+      return res.json({ report: null });
+    }
+
+    res.json({ report });
+  } catch (err) {
+    console.error('Error fetching latest report:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch latest report' });
   }
 };
 

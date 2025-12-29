@@ -7,6 +7,7 @@ import { NotificationDetailPanel } from './NotificationDetailPanel';
 import { NotificationBell } from './NotificationBell';
 import { ProfileModal } from './ProfileModal';
 import { api } from '../api';
+import { Spinner } from './Spinner';
 
 interface AdminDashboardEnhancedProps {
   currentUser: User;
@@ -329,6 +330,11 @@ export function AdminDashboardEnhanced({
         setChatOtherUser(otherUser);
         setChatProject(project);
         setChatPanelOpen(true);
+        // Force scroll to bottom after chat opens (small delay to ensure ChatPanel is mounted)
+        setTimeout(() => {
+          // Trigger scroll event on ChatPanel by dispatching a custom event
+          window.dispatchEvent(new CustomEvent('chat-opened'));
+        }, 200);
       } catch (error) {
         console.error('Error opening chat:', error);
         alert('Cannot open chat: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -609,9 +615,9 @@ export function AdminDashboardEnhanced({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 min-h-0 flex flex-col bg-gray-50">
+      <div className="flex-1 min-h-0 flex flex-col bg-gray-50" style={{ height: '100vh', maxHeight: '100vh', overflow: 'hidden' }}>
         {/* Top Bar with Notifications */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shrink-0">
+        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between" style={{ flexShrink: 0, flex: '0 0 auto' }}>
           <div className="flex items-center space-x-4">
             <h2 className="text-xl font-semibold text-gray-900">
               {activeTab === 'dashboard' && 'Dashboard'}
@@ -720,11 +726,11 @@ export function AdminDashboardEnhanced({
         </div>
         
         {/* Chats Tab - Always mounted for stable height */}
-        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'chats' ? '' : 'hidden'}`}>
-          <div className="flex-1 min-h-0 flex">
+        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'chats' ? '' : 'hidden'}`} style={{ height: '100%', maxHeight: '100%', overflow: 'hidden' }}>
+          <div className="flex-1 min-h-0 flex" style={{ height: '100%', maxHeight: '100%', overflow: 'hidden' }}>
             {/* Conversations List */}
-            <div className={`${chatPanelOpen ? 'w-1/3' : 'w-full'} border-r border-gray-200 bg-white flex flex-col min-h-0`}>
-              <div className="p-6 flex-1 overflow-y-auto min-h-0">
+            <div className={`${chatPanelOpen ? 'w-2/5' : 'w-full'} border-r border-gray-200 bg-white flex flex-col min-h-0`} style={{ height: '100%', maxHeight: '100%', overflow: 'hidden' }}>
+              <div className="p-6 flex-1 overflow-y-auto min-h-0 chat-conversations-scroll" style={{ height: '100%', maxHeight: '100%', overflowY: 'auto', scrollbarGutter: 'stable' }}>
                 {allConversations.length === 0 ? (
                   <div className="text-center py-12">
                     <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -840,12 +846,13 @@ export function AdminDashboardEnhanced({
 
             {/* Chat Panel - Always mounted when project/user exist, shown when chatPanelOpen */}
             {chatProject && chatOtherUser ? (
-              <div className={`flex-1 min-h-0 flex flex-col bg-white ${chatPanelOpen ? '' : 'hidden'}`}>
+              <div className={`${chatPanelOpen ? 'w-3/5' : 'w-0'} min-h-0 flex flex-col bg-white transition-all duration-200 ${chatPanelOpen ? '' : 'hidden'}`} style={{ height: '100%', maxHeight: '100%', overflow: 'hidden', minHeight: 0 }}>
                 <ChatPanel
                   project={chatProject}
                   currentUser={currentUser}
                   otherUser={chatOtherUser}
                   inline={true}
+                  forceScrollOnMount={chatPanelOpen}
                   onClose={() => {
                     setChatPanelOpen(false);
                     // Keep project/user so ChatPanel stays mounted
@@ -1906,9 +1913,10 @@ function CreatedReportsTab({ projects, currentUser }: any) {
               </button>
               <button
                 onClick={() => handleDownloadDOCX(reportId, detailsReport.title)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
                 title="Download Word"
               >
+                <Download className="h-4 w-4" />
                 <FileText className="h-4 w-4" />
                 Word
               </button>
@@ -2110,7 +2118,7 @@ function CreatedReportsTab({ projects, currentUser }: any) {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={(e) => handleDownloadPDF(reportId, report.title, e)}
-                          className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+                          className="px-3 py-1.5 text-sm text-blue-600 bg-white hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
                           title="Download PDF"
                         >
                           <Download className="h-4 w-4" />
@@ -2118,15 +2126,16 @@ function CreatedReportsTab({ projects, currentUser }: any) {
                         </button>
                         <button
                           onClick={(e) => handleDownloadDOCX(reportId, report.title, e)}
-                          className="px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-2"
+                          className="px-3 py-1.5 text-sm text-green-600 bg-white border border-transparent hover:border-green-300 hover:bg-green-50 rounded-lg transition-all duration-200 flex items-center gap-2"
                           title="Download Word"
                         >
+                          <Download className="h-4 w-4" />
                           <FileText className="h-4 w-4" />
                           Word
                         </button>
                         <button
                           onClick={() => handleViewDetails(reportId)}
-                          className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                          className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors"
                           title="View Details"
                         >
                           View Details
@@ -2420,9 +2429,10 @@ function ReportsTab({ projects, currentUser, users }: any) {
               </button>
               <button
                 onClick={() => handleDownloadDOCX(reportId, detailsReport.title)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
                 title="Download Word"
               >
+                <Download className="h-4 w-4" />
                 <FileText className="h-4 w-4" />
                 Word
               </button>
@@ -2571,8 +2581,8 @@ function ReportsTab({ projects, currentUser, users }: any) {
       {showGeneratingMessage && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
-            <div className="flex items-center space-x-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="flex items-center gap-2.5" role="status" aria-live="polite">
+              <Spinner size={20} strokeWidth={2.5} className="flex-shrink-0" />
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Generating Report</h3>
                 <p className="text-sm text-gray-600 mt-1">Your report is being generated. Please wait...</p>
@@ -2706,7 +2716,7 @@ function ReportsTab({ projects, currentUser, users }: any) {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={(e) => handleDownloadPDF(reportId, report.title, e)}
-                          className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+                          className="px-3 py-1.5 text-sm text-blue-600 bg-white hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
                           title="Download PDF"
                         >
                           <Download className="h-4 w-4" />
@@ -2714,15 +2724,16 @@ function ReportsTab({ projects, currentUser, users }: any) {
                         </button>
                         <button
                           onClick={(e) => handleDownloadDOCX(reportId, report.title, e)}
-                          className="px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-2"
+                          className="px-3 py-1.5 text-sm text-green-600 bg-white border border-transparent hover:border-green-300 hover:bg-green-50 rounded-lg transition-all duration-200 flex items-center gap-2"
                           title="Download Word"
                         >
+                          <Download className="h-4 w-4" />
                           <FileText className="h-4 w-4" />
                           Word
                         </button>
                         <button
                           onClick={() => handleViewDetails(reportId)}
-                          className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                          className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors"
                           title="View Details"
                         >
                           View Details
