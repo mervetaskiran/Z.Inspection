@@ -55,13 +55,33 @@ const UserSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', UserSchema);
 
+// Project Schema
+const ProjectSchema = new mongoose.Schema({
+  title: String,
+  useCase: String,
+  assignedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+}, { collection: 'projects' });
+
+const Project = mongoose.model('Project', ProjectSchema);
+
+// ProjectAssignment Schema
+const ProjectAssignmentSchema = new mongoose.Schema({
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  role: String
+}, { collection: 'projectassignments' });
+
+const ProjectAssignment = mongoose.model('ProjectAssignment', ProjectAssignmentSchema);
+
+// Helper function for ObjectId validation
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
 async function migrateUseCaseStatuses() {
   try {
     console.log('🔌 Connecting to MongoDB...');
-    await mongoose.connect(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected to MongoDB');
 
     // Get all use cases
@@ -73,15 +93,70 @@ async function migrateUseCaseStatuses() {
 
     for (const useCase of useCases) {
       try {
-        // Count assigned experts (excluding admins)
+        // Get all projects linked to this use case
+        const linkedProjects = await Project.find({ useCase: useCase._id.toString() }).lean();
+        
+        // Collect all assigned expert IDs (same logic as backend)
+        const assignedExpertIds = new Set();
+        
+        // Add experts from useCase.assignedExperts
+        if (useCase.assignedExperts && Array.isArray(useCase.assignedExperts)) {
+          useCase.assignedExperts.forEach(id => {
+            if (id) {
+              const idStr = id.toString ? id.toString() : String(id);
+              if (isValidObjectId(idStr)) {
+                assignedExpertIds.add(idStr);
+              }
+            }
+          });
+        }
+        
+        // Add experts from linked projects' assignedUsers
+        for (const project of linkedProjects) {
+          if (project.assignedUsers && Array.isArray(project.assignedUsers)) {
+            project.assignedUsers.forEach(id => {
+              if (id) {
+                const idStr = id.toString ? id.toString() : String(id);
+                if (isValidObjectId(idStr)) {
+                  assignedExpertIds.add(idStr);
+                }
+              }
+            });
+          }
+        }
+        
+        // Also check ProjectAssignment collection for all assignments
+        const projectIds = linkedProjects.map(p => p._id);
+        if (projectIds.length > 0) {
+          const assignments = await ProjectAssignment.find({
+            projectId: { $in: projectIds }
+          }).lean();
+          
+          assignments.forEach(assignment => {
+            if (assignment.userId) {
+              const idStr = assignment.userId.toString ? assignment.userId.toString() : String(assignment.userId);
+              if (isValidObjectId(idStr)) {
+                assignedExpertIds.add(idStr);
+              }
+            }
+          });
+        }
+        
+        // Filter out admins and count
+        const expertIdsArray = Array.from(assignedExpertIds);
         let assignedExpertsCount = 0;
-        if (useCase.assignedExperts && Array.isArray(useCase.assignedExperts) && useCase.assignedExperts.length > 0) {
-          const expertIds = useCase.assignedExperts.map(id => id.toString()).filter(Boolean);
-          if (expertIds.length > 0) {
+        if (expertIdsArray.length > 0) {
+          // Convert string IDs to ObjectIds for query
+          const expertObjectIds = expertIdsArray
+            .filter(id => isValidObjectId(id))
+            .map(id => new mongoose.Types.ObjectId(id));
+          
+          if (expertObjectIds.length > 0) {
             const experts = await User.find({
-              _id: { $in: expertIds },
+              _id: { $in: expertObjectIds },
               role: { $ne: 'admin' }
             }).select('_id').lean();
+            
             assignedExpertsCount = experts.length;
           }
         }

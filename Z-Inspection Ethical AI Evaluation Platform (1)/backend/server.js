@@ -813,67 +813,34 @@ app.get('/api/use-cases', async (req, res) => {
       .limit(1000) // Limit results for performance
       .sort({ createdAt: -1 }); // Sort by newest first
     
-    // Compute assignedExpertsCount for each use case (for table display)
-    // But do NOT change stored status - status is controlled by assignment action
-    const ProjectAssignment = require('./models/projectAssignment');
-    const User = require('./models/User');
+    // Use unified assignment resolver to get assigned experts from ALL sources
+    const { getAssignedExpertsForUseCase } = require('./services/useCaseAssignmentService');
     
     const useCasesWithCount = await Promise.all(useCases.map(async (useCase) => {
       try {
-        // Get all projects linked to this use case
-        const linkedProjects = await Project.find({ useCase: useCase._id.toString() }).lean();
+        // Get assigned experts using unified resolver
+        const assignmentData = await getAssignedExpertsForUseCase(useCase._id);
         
-        // Collect all assigned expert IDs
-        const assignedExpertIds = new Set();
+        const assignedExpertsCount = assignmentData.assignedExpertsCount;
         
-        // Add experts from useCase.assignedExperts
-        if (useCase.assignedExperts && Array.isArray(useCase.assignedExperts)) {
-          useCase.assignedExperts.forEach(id => {
-            assignedExpertIds.add(id.toString());
-          });
-        }
+        // Override status based on assignedExpertsCount
+        // If at least one expert is assigned, status must be ASSIGNED
+        // This ensures consistency even if stored status is incorrect
+        const computedStatus = assignedExpertsCount > 0 ? 'ASSIGNED' : 'UNASSIGNED';
         
-        // Add experts from linked projects' assignedUsers
-        for (const project of linkedProjects) {
-          if (project.assignedUsers && Array.isArray(project.assignedUsers)) {
-            project.assignedUsers.forEach(id => {
-              assignedExpertIds.add(id.toString());
-            });
-          }
-        }
-        
-        // Also check ProjectAssignment collection for all assignments
-        const projectIds = linkedProjects.map(p => p._id);
-        if (projectIds.length > 0) {
-          const assignments = await ProjectAssignment.find({
-            projectId: { $in: projectIds }
-          }).lean();
-          
-          assignments.forEach(assignment => {
-            assignedExpertIds.add(assignment.userId.toString());
-          });
-        }
-        
-        // Filter out admins
-        const expertIdsArray = Array.from(assignedExpertIds);
-        let assignedExpertsCount = 0;
-        if (expertIdsArray.length > 0) {
-          const experts = await User.find({
-            _id: { $in: expertIdsArray },
-            role: { $ne: 'admin' }
-          }).select('_id').lean();
-          
-          assignedExpertsCount = experts.length;
+        // Debug log
+        if (assignedExpertsCount > 0) {
+          console.log(`[Unified Resolver] UseCase ${useCase._id} (${useCase.title}): assignedExpertsCount=${assignedExpertsCount}, storedStatus=${useCase.status}, computedStatus=${computedStatus}, sources=${assignmentData.assignedUserIds.length} unique IDs`);
         }
         
         return {
           ...useCase,
-          // Return stored status (do NOT override)
-          status: useCase.status === 'ASSIGNED' || useCase.status === 'UNASSIGNED' || useCase.status === 'COMPLETED' 
-            ? useCase.status 
-            : (useCase.status || 'UNASSIGNED'),
+          // Override status based on assignment count
+          status: computedStatus,
           // Include assignedExpertsCount for frontend to use
-          assignedExpertsCount
+          assignedExpertsCount,
+          // Include assigned experts list for frontend (for avatars)
+          assignedExperts: assignmentData.assignedExperts.map(e => e.userId)
         };
       } catch (err) {
         console.error(`Error computing assignedExpertsCount for use case ${useCase._id}:`, err);
@@ -881,7 +848,8 @@ app.get('/api/use-cases', async (req, res) => {
         return {
           ...useCase,
           status: useCase.status || 'UNASSIGNED',
-          assignedExpertsCount: 0
+          assignedExpertsCount: 0,
+          assignedExperts: []
         };
       }
     }));
@@ -969,17 +937,33 @@ app.put('/api/use-cases/:id/assign', async (req, res) => {
     const { assignedExperts = [], adminNotes = '' } = req.body;
     const useCaseId = req.params.id;
     
-    // Count assigned experts (excluding admins)
-    const User = require('./models/User');
+    // Validate useCaseId
+    if (!isValidObjectId(useCaseId)) {
+      return res.status(400).json({ error: 'Invalid use case ID' });
+    }
+    
+    // Count assigned experts (excluding admins) and convert to ObjectIds
     let assignedExpertsCount = 0;
+    let validAssignedExperts = [];
+    
     if (assignedExperts && Array.isArray(assignedExperts) && assignedExperts.length > 0) {
-      const expertIds = assignedExperts.map(id => id.toString()).filter(Boolean);
-      if (expertIds.length > 0) {
+      // Filter and convert to valid ObjectIds
+      validAssignedExperts = assignedExperts
+        .map(id => {
+          if (!id) return null;
+          const idStr = id.toString();
+          return isValidObjectId(idStr) ? new mongoose.Types.ObjectId(idStr) : null;
+        })
+        .filter(Boolean);
+      
+      if (validAssignedExperts.length > 0) {
         const experts = await User.find({
-          _id: { $in: expertIds },
+          _id: { $in: validAssignedExperts },
           role: { $ne: 'admin' }
         }).select('_id').lean();
         assignedExpertsCount = experts.length;
+        // Use only the valid expert IDs that were found
+        validAssignedExperts = experts.map(e => e._id);
       }
     }
     
@@ -988,13 +972,15 @@ app.put('/api/use-cases/:id/assign', async (req, res) => {
     
     const updated = await UseCase.findByIdAndUpdate(
       useCaseId,
-      { assignedExperts, adminNotes, status: newStatus },
+      { assignedExperts: validAssignedExperts, adminNotes, status: newStatus },
       { new: true }
     );
-    if (!updated) return res.status(404).json({ error: 'Not found' });
+    if (!updated) return res.status(404).json({ error: 'Use case not found' });
     
     // Update all projects linked to this use case: add assigned experts to project.assignedUsers
+    // Also create ProjectAssignment records so experts can see the projects
     try {
+      const ProjectAssignment = require('./models/projectAssignment');
       const linkedProjects = await Project.find({ useCase: useCaseId });
       
       for (const project of linkedProjects) {
@@ -1004,13 +990,39 @@ app.put('/api/use-cases/:id/assign', async (req, res) => {
         
         // Add new experts to project.assignedUsers (avoid duplicates)
         const currentAssigned = project.assignedUsers.map((id) => id.toString());
-        const newExpertIds = assignedExperts.map((id) => id.toString());
+        const newExpertIds = validAssignedExperts.map((id) => id.toString());
         
         // Combine and deduplicate
-        const allAssigned = Array.from(new Set([...currentAssigned, ...newExpertIds]));
-        project.assignedUsers = allAssigned;
+        const allAssignedIds = Array.from(new Set([...currentAssigned, ...newExpertIds]));
+        project.assignedUsers = allAssignedIds.map(id => new mongoose.Types.ObjectId(id));
         
         await project.save();
+        
+        // Create or update ProjectAssignment records for each expert
+        for (const expertId of validAssignedExperts) {
+          try {
+            // Get user to determine role
+            const expertUser = await User.findById(expertId).select('role').lean();
+            if (!expertUser || expertUser.role === 'admin') continue;
+            
+            // Create or update ProjectAssignment
+            await ProjectAssignment.findOneAndUpdate(
+              { projectId: project._id, userId: expertId },
+              {
+                projectId: project._id,
+                userId: expertId,
+                role: expertUser.role, // e.g., "medical-expert", "technical-expert"
+                questionnaires: [], // Will be populated when questionnaires are assigned
+                status: 'assigned',
+                assignedAt: new Date()
+              },
+              { new: true, upsert: true }
+            );
+          } catch (assignmentError) {
+            console.error(`Error creating ProjectAssignment for expert ${expertId} on project ${project._id}:`, assignmentError);
+            // Continue with other experts even if one fails
+          }
+        }
       }
     } catch (projectUpdateError) {
       console.error('Error updating linked projects:', projectUpdateError);
@@ -1019,7 +1031,8 @@ app.put('/api/use-cases/:id/assign', async (req, res) => {
     
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error in /api/use-cases/:id/assign:', err);
+    res.status(500).json({ error: err.message || 'Failed to assign experts to use case' });
   }
 });
 

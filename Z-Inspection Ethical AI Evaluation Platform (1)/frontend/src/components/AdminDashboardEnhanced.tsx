@@ -1242,43 +1242,50 @@ function UseCaseAssignmentsTab({ useCases, users, projects, onAssignExperts }: a
                 useCases.map((useCase: UseCase) => {
                   const owner = users.find((u: User) => u.id === useCase.ownerId);
                   
-                  // Get assigned experts from use case directly
-                  const useCaseAssignedExperts = useCase.assignedExperts || [];
+                  // Use backend's unified resolver result
+                  // Backend now returns assignedExpertsCount and assignedExperts array from ALL sources
+                  const assignedExpertsCount = useCase.assignedExpertsCount !== undefined 
+                    ? useCase.assignedExpertsCount 
+                    : 0;
                   
-                  // Also get assigned experts from projects linked to this use case
-                  const linkedProjects = projects.filter((p: Project) => {
-                    const projectUseCaseId = p.useCase?.toString() || (p as any).useCaseId?.toString();
-                    return projectUseCaseId === useCase.id?.toString() || projectUseCaseId === (useCase as any)._id?.toString();
-                  });
+                  // Get assigned expert user IDs from backend (unified resolver)
+                  const backendAssignedExpertIds = (useCase.assignedExperts || []).map((id: any) => 
+                    id?.toString ? id.toString() : String(id)
+                  );
                   
-                  // Collect all assigned user IDs from linked projects
-                  const projectAssignedUserIds = new Set<string>();
-                  linkedProjects.forEach((project: Project) => {
-                    if (project.assignedUsers && Array.isArray(project.assignedUsers)) {
-                      project.assignedUsers.forEach((userId: string) => {
-                        projectAssignedUserIds.add(userId.toString());
-                      });
-                    }
-                  });
-                  
-                  // Combine use case assigned experts and project assigned users
-                  const allAssignedUserIds = new Set([
-                    ...useCaseAssignedExperts.map((id: string) => id.toString()),
-                    ...Array.from(projectAssignedUserIds)
-                  ]);
+                  // Fallback: Also check projects if backend didn't return assignedExperts
+                  let allAssignedUserIds = new Set(backendAssignedExpertIds);
+                  if (backendAssignedExpertIds.length === 0) {
+                    // Legacy fallback: get from projects
+                    const linkedProjects = projects.filter((p: Project) => {
+                      const projectUseCaseId = p.useCase?.toString() || (p as any).useCaseId?.toString();
+                      return projectUseCaseId === useCase.id?.toString() || projectUseCaseId === (useCase as any)._id?.toString();
+                    });
+                    
+                    linkedProjects.forEach((project: Project) => {
+                      if (project.assignedUsers && Array.isArray(project.assignedUsers)) {
+                        project.assignedUsers.forEach((userId: string) => {
+                          allAssignedUserIds.add(userId.toString());
+                        });
+                      }
+                    });
+                  }
                   
                   // Filter users to get assigned experts (exclude admins)
-                  // Note: Backend computes assignedExpertsCount from useCase.assignedExperts + project.assignedUsers + ProjectAssignment
-                  // So we show all users that match any of these sources
                   const assignedExperts = users.filter((u: User) => {
                     const userId = u.id?.toString() || (u as any)._id?.toString();
                     return allAssignedUserIds.has(userId) && u.role !== 'admin';
                   });
                   
-                  // Calculate assignedExpertsCount (use backend value if available, otherwise use frontend calculation)
-                  const assignedExpertsCount = useCase.assignedExpertsCount !== undefined 
-                    ? useCase.assignedExpertsCount 
-                    : assignedExperts.length;
+                  // Debug log
+                  console.log(`[Status Debug] ${useCase.title}:`, {
+                    assignedExpertsCount,
+                    backendCount: useCase.assignedExpertsCount,
+                    backendAssignedExpertIds: backendAssignedExpertIds.length,
+                    frontendAssignedExperts: assignedExperts.length,
+                    storedStatus: useCase.status,
+                    displayStatus: assignedExpertsCount > 0 ? 'ASSIGNED' : 'UNASSIGNED'
+                  });
                   
                   // Override status display based on assignedExpertsCount (table-level rule)
                   // If at least one expert is assigned, status must be ASSIGNED
