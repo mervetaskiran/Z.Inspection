@@ -290,7 +290,10 @@ function App() {
         })();
 
         if ((err as any)?.error === "NOT_ALL_TENSIONS_VOTED") {
-          alert("Please make sure you have voted on all tensions.");
+          const errorData = err as any;
+          const message = errorData.message || 
+            `Please vote on all tensions you can vote on. You have voted on ${errorData.votedTensions || 0} out of ${errorData.totalVotableTensions || 0} votable tensions. (Note: You cannot vote on your own tensions.)`;
+          alert(message);
           return;
         }
         const details = rawText && rawText.length < 500 ? rawText : "";

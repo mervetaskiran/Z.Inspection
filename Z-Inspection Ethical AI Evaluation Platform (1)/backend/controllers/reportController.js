@@ -945,21 +945,61 @@ exports.generateDashboardNarrative = async (req, res) => {
         : []
     }));
 
-    // Build responseExcerpts (optional - sample a few expert answers)
+    // Build responseExcerpts (optional - prioritize high-risk questions)
     const responseExcerpts = [];
-    const sampleResponses = responses.slice(0, 5); // Sample first 5 responses
-    for (const response of sampleResponses) {
+    const highRiskQuestionCodes = new Set(topRiskyQuestions.map(q => q.questionCode));
+    
+    // First, collect excerpts from high-risk questions
+    for (const response of responses) {
       if (response.answers && Array.isArray(response.answers)) {
-        const textAnswers = response.answers
-          .filter(a => a.answerText && a.answerText.trim().length > 20)
-          .slice(0, 2); // Max 2 excerpts per response
-        
-        textAnswers.forEach(answer => {
-          responseExcerpts.push({
-            questionCode: answer.questionCode || 'Unknown',
-            excerpt: answer.answerText.substring(0, 200) // Limit to 200 chars
+        for (const answer of response.answers) {
+          const questionCode = answer.questionCode;
+          if (questionCode && highRiskQuestionCodes.has(questionCode)) {
+            // Check for text answers
+            if (answer.answerText && answer.answerText.trim().length > 20) {
+              responseExcerpts.push({
+                questionCode: questionCode,
+                excerpt: answer.answerText.trim().substring(0, 250) // Limit to 250 chars
+              });
+            } else if (answer.answer && answer.answer.text && answer.answer.text.trim().length > 20) {
+              responseExcerpts.push({
+                questionCode: questionCode,
+                excerpt: answer.answer.text.trim().substring(0, 250)
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    // Then, add some general excerpts if we don't have enough
+    if (responseExcerpts.length < 10) {
+      const sampleResponses = responses.slice(0, 10);
+      for (const response of sampleResponses) {
+        if (response.answers && Array.isArray(response.answers)) {
+          const textAnswers = response.answers
+            .filter(a => {
+              const questionCode = a.questionCode;
+              // Skip if we already have this question or it's a high-risk question
+              return !highRiskQuestionCodes.has(questionCode) && 
+                     !responseExcerpts.some(e => e.questionCode === questionCode);
+            })
+            .filter(a => {
+              const text = a.answerText || (a.answer && a.answer.text);
+              return text && text.trim().length > 20;
+            })
+            .slice(0, 1); // Max 1 excerpt per response for non-high-risk
+          
+          textAnswers.forEach(answer => {
+            if (responseExcerpts.length < 15) { // Limit total excerpts
+              const text = answer.answerText || (answer.answer && answer.answer.text);
+              responseExcerpts.push({
+                questionCode: answer.questionCode || 'Unknown',
+                excerpt: text.trim().substring(0, 250)
+              });
+            }
           });
-        });
+        }
       }
     }
 

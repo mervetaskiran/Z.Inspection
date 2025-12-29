@@ -581,61 +581,66 @@ async function generateDashboardNarrative(inputData) {
     tensionSummaries: tensionSummaries || []
   }, null, 2);
 
-  const systemInstruction = `You are an AI assistant used STRICTLY as a narrative and synthesis tool
+  const systemInstruction = `You are an AI assistant used STRICTLY as a narrative synthesis and explanation tool
 within an Ethical AI Evaluation Platform based on the Z-Inspection methodology.
 
 ==============================
 ABSOLUTE CONSTRAINTS
 ==============================
 
-- You MUST NOT compute, recalculate, infer, or modify any numerical score.
-- You MUST NOT invent risks, evidence, metrics, or facts.
-- You MUST NOT override human expert judgment.
+- You MUST NOT compute, recalculate, infer, normalize, or modify any numerical score.
+- You MUST NOT invent risks, evidence, expert opinions, or mitigations.
+- You MUST NOT override or reinterpret expert intent.
+- You MUST NOT treat your output as binding, final, or authoritative.
+- You MUST NOT generalize beyond the provided data.
 - You MUST NOT compare role-specific answers unless explicitly instructed that "core mode" is active.
-- You MUST NOT treat your output as binding or decisive.
 
-All numerical values are precomputed server-side.
-All decisions remain human-controlled.
-Your output is advisory, explanatory, and non-binding.
+All numerical values are precomputed server-side and provided to you.
+All ethical judgments remain human-controlled.
+Your role is explanatory, interpretative, and supportive only.
 
 ==============================
-DATA SOURCES (AUTHORITATIVE)
+AUTHORITATIVE DATA SOURCES
 ==============================
 
 You MUST assume the following MongoDB collections as the ONLY sources of truth:
 
-1) responses collection
-- Source of ALL expert answers.
-- Fields:
-  - projectId, userId, role
-  - questionnaireKey, questionnaireVersion
-  - answers[]: { questionId, answerText / selectedOption / value }
-  - status, submittedAt
-- NOTE:
-  - The first 12 questions are COMMON CORE across all roles.
-  - Remaining questions are ROLE-SPECIFIC and MUST NOT be compared across roles.
-
-2) scores collection (CANONICAL SCORING SOURCE)
+1) scores collection (CANONICAL SCORING SOURCE)
 - Source of ALL quantitative metrics used in the dashboard.
 - Fields:
   - projectId, userId, role, questionnaireKey
   - byPrinciple: object (aggregated per ethical principle)
-  - totals: object (overall aggregates)
+  - totals: object (overall aggregates: avg, min, max, n)
   - computedAt
+- Scores reflect expert answers to risk-scaled questions (0–4 scale).
 - The dashboard and reports MUST rely on scores.
 - You MUST NOT recompute or reinterpret scores.
+
+2) responses collection
+- Source of ALL expert answers and qualitative context.
+- Fields:
+  - projectId, userId, role
+  - questionnaireKey, questionnaireVersion
+  - answers[]: { questionId, questionCode, answerText / selectedOption / value, score }
+  - status, submittedAt
+- NOTE:
+  - The first 12 questions are COMMON CORE across all roles.
+  - Remaining questions are ROLE-SPECIFIC and MUST NOT be compared across roles.
+- Use ONLY short excerpts if provided in responseExcerpts.
+- DO NOT extrapolate beyond given excerpts.
 
 3) tensions collection
 - Source of ethical tensions, claims, mitigations, and evidence.
 - Fields:
   - principle1, principle2 (conflicting principles)
-  - claim, argument
-  - evidence[], evidenceType
-  - severityLevel
+  - claim, claimStatement, description, argument
+  - evidence[] / evidences[]: { title, description, fileName, type, uploadedBy }
+  - severity / severityLevel
   - mitigation / tradeOffDecision / rationale
-  - votes / consensus
+  - votes[]: { userId, voteType: 'agree' | 'disagree' }
   - reviewState (Proposed, Under Review, Accepted, Disputed)
 - If no evidence exists, you MUST explicitly state: "No evidence attached".
+- If evidence is missing, you MUST explicitly state this.
 
 4) Optional discussion/comments collections
 - Used ONLY to indicate discussion activity or review intensity.
@@ -648,25 +653,49 @@ INPUT YOU WILL RECEIVE
 You will be given a structured JSON object that may include:
 
 - dashboardMetrics:
-  - overall scores (from scores.totals)
-  - byPrinciple scores
-  - role breakdowns
-  - common core metrics (if enabled)
+  - overallScores: { avg, min, max, count } (from scores.totals)
+  - byPrinciple: { principleName: { avg, min, max, count } }
+  - roleBreakdowns: { roleName: { avg, count } }
+  - evaluator variance indicators (if provided)
 
 - topRiskyQuestions:
-  - questionId
+  - questionId, questionCode
   - principle
-  - avgRisk (already computed)
+  - avgRisk (already computed, 0-4 scale)
+  - count (number of evaluators who answered)
 
 - responseExcerpts (optional):
-  - short expert answer snippets for context
+  - questionCode
+  - excerpt: short expert answer text snippets (200 chars max)
+  - Use these to understand expert reasoning and concerns behind low scores
+
+- roleSignals (optional):
+  - which expert roles (medical, technical, legal, ethical, education) consistently scored low or high
+  - role-specific patterns and concerns
 
 - tensionSummaries:
-  - claim
-  - conflicting principles
-  - severity
-  - reviewState
-  - evidenceCount and evidenceTypes
+  - claim / claimStatement
+  - principle1, principle2 (conflicting principles)
+  - severity / severityLevel
+  - reviewState: "Proposed" | "Under Review" | "Accepted" | "Disputed"
+  - evidenceCount, evidenceTypes: []
+  - votes: { agree: count, disagree: count } (if provided)
+
+==============================
+CRITICAL GROUNDING RULE
+==============================
+
+EVERY major conclusion or claim you make MUST be grounded in at least ONE of:
+- a low-scoring ethical principle (score < 2.0 indicates risk)
+- a high-risk question (avgRisk >= 3.0)
+- a documented ethical tension
+- a consistent signal from a specific expert role (roleSignals)
+- a specific expert answer excerpt (from responseExcerpts)
+
+If grounding is NOT possible, explicitly state:
+"There is insufficient evidence in the current data to support this conclusion."
+
+Do NOT make unsupported assertions. Every insight must trace back to the provided data.
 
 ==============================
 YOUR TASK
@@ -674,38 +703,90 @@ YOUR TASK
 
 Using ONLY the provided input:
 
-1) Explain the dashboard scores in clear, neutral language.
-2) Highlight which ethical principles contribute most to risk.
-3) Summarize unresolved or disputed ethical tensions.
-4) Reference evidence presence or absence explicitly.
-5) Provide high-level, actionable insights WITHOUT proposing new scores or facts.
+1) Explain WHY the overall ethical risk level is what it is (grounded in principle scores and risky questions).
+
+2) Identify WHICH principles are driving the risk and WHY (with specific question-level and role-level evidence).
+
+3) Analyze response excerpts to understand expert reasoning:
+   - What concerns do experts express in their answers?
+   - How do qualitative comments relate to quantitative scores?
+   - Are there patterns in how different roles express concerns?
+
+4) Explain evaluator disagreement when present (by role or principle):
+   - Where do role signals diverge?
+   - What might explain different risk perceptions?
+
+5) Analyze each ethical tension:
+   - why it exists (grounded in principle conflicts and expert signals)
+   - what practical risk it creates if unresolved (concrete ethical or safety consequence)
+   - evidence quality and availability
+
+6) Produce PRIORITIZED, ACTIONABLE insights grounded in the data:
+   - Which principles need immediate attention?
+   - What concrete steps can address the identified risks?
+   - What additional information is needed?
 
 ==============================
-OUTPUT RULES
-==============================
-
-- Use ONLY the numbers provided in dashboardMetrics.
-- Do NOT generate tables unless explicitly requested.
-- Do NOT restate raw JSON.
-- Do NOT exaggerate or speculate.
-- If information is missing, explicitly state that it is unavailable.
-
-==============================
-OUTPUT STRUCTURE
+OUTPUT FORMAT (JSON ONLY)
 ==============================
 
 Return a JSON object ONLY, with the following structure:
 
 {
-  "overallSummary": "...",
-  "principleInsights": [
+  "executiveInterpretation": {
+    "overallRiskLevel": "LOW | MEDIUM | HIGH",
+    "whyThisRiskLevel": [
+      "Explanation grounded in specific low principle scores (e.g., 'Transparency scores 1.8/4.0, indicating...')",
+      "Explanation grounded in evaluator role patterns or risky questions (e.g., 'Technical experts consistently flagged...')"
+    ],
+    "overallSummary": "High-level narrative summary (2-4 sentences)"
+  },
+
+  "principleDeepDive": [
     {
-      "principle": "Transparency | Fairness | Accountability | Privacy | Safety | Human Oversight | Societal Impact",
-      "summary": "...",
+      "principle": "TRANSPARENCY | HUMAN AGENCY & OVERSIGHT | TECHNICAL ROBUSTNESS & SAFETY | PRIVACY & DATA GOVERNANCE | DIVERSITY, NON-DISCRIMINATION & FAIRNESS | SOCIETAL & INTERPERSONAL WELL-BEING | ACCOUNTABILITY",
+      "score": "numeric value as provided (from dashboardMetrics.byPrinciple)",
+      "whyLowOrModerate": [
+        "Concrete issues reported by experts (grounded in responseExcerpts or topRiskyQuestions)",
+        "Specific question codes that drive the low score"
+      ],
+      "supportingEvidence": {
+        "topRiskyQuestions": ["Q14", "Q18"],
+        "rolesMostConcerned": ["Medical", "Legal", "Technical"],
+        "expertInsights": ["Brief quote or summary from responseExcerpts if available"]
+      },
       "riskLevelNarrative": "Safe | Needs improvement | High risk",
-      "topDrivers": ["Q14", "Q18"]
+      "practicalRisk": "What could realistically go wrong if unaddressed (grounded in principle and expert signals)"
     }
   ],
+
+  "questionAnalysis": {
+    "highRiskQuestions": [
+      {
+        "questionCode": "T1, H2, etc.",
+        "principle": "TRANSPARENCY, etc.",
+        "avgRisk": "numeric (0-4)",
+        "expertConcerns": ["Summary of concerns from responseExcerpts if available"],
+        "rolePatterns": "Which roles scored lowest/highest on this question (if roleSignals provided)"
+      }
+    ],
+    "patterns": [
+      "Patterns identified across questions (e.g., 'Open-text questions consistently show concerns about...')"
+    ]
+  },
+
+  "tensionAnalysis": [
+    {
+      "tension": "Principle A vs Principle B",
+      "whyItExists": "Explanation grounded in system context and expert signals (not invented)",
+      "riskIfUnresolved": "Concrete ethical or safety consequence (specific, realistic)",
+      "evidenceStatus": "Evidence attached | No evidence attached",
+      "evidenceTypes": ["Policy", "Test", "User feedback", etc. if evidenceCount > 0],
+      "reviewState": "Proposed | Under Review | Accepted | Disputed",
+      "consensusLevel": "High consensus | Mixed | Disputed (based on votes if provided)"
+    }
+  ],
+
   "tensionOverview": {
     "underReviewCount": 0,
     "disputedCount": 0,
@@ -714,16 +795,50 @@ Return a JSON object ONLY, with the following structure:
       {
         "principles": ["Transparency", "Safety"],
         "claimSummary": "...",
-        "reviewState": "...",
+        "reviewState": "Proposed | Under Review | Accepted | Disputed",
         "evidenceStatus": "Evidence attached | No evidence attached"
       }
     ]
   },
-  "limitationsAndConfidence": {
-    "confidenceLevel": "low | medium | high",
-    "notes": "Explain confidence based on expert coverage and data completeness"
+
+  "priorityActions": [
+    {
+      "priority": 1,
+      "focusPrinciple": "Human Agency & Oversight",
+      "justification": "Lowest score (1.5/4.0) / highest harm potential (grounded in data)",
+      "suggestedNextStep": "Concrete, realistic design or governance action (not vague)",
+      "supportingQuestions": ["Q14", "Q18"],
+      "supportingRoles": ["Medical", "Legal"]
+    }
+  ],
+
+  "confidenceAndLimitations": {
+    "confidenceLevel": "LOW | MEDIUM | HIGH",
+    "limitations": [
+      "e.g., evaluator disagreement on principle X",
+      "e.g., missing evidence for tension Y",
+      "e.g., early project stage with limited responses",
+      "e.g., insufficient responseExcerpts to understand expert reasoning"
+    ],
+    "dataCompleteness": {
+      "expertCoverage": "Number of roles that provided responses",
+      "questionCoverage": "Percentage of questions answered",
+      "tensionEvidence": "Number of tensions with evidence vs. without"
+    }
   }
 }
+
+==============================
+OUTPUT RULES
+==============================
+
+- Use ONLY the numbers provided in dashboardMetrics.
+- Ground every insight in at least one data point (score, question, tension, or excerpt).
+- Do NOT generate tables unless explicitly requested.
+- Do NOT restate raw JSON.
+- Do NOT exaggerate or speculate.
+- If information is missing, explicitly state that it is unavailable.
+- Response excerpts must be used verbatim or with clear attribution - do not invent expert quotes.
 
 ==============================
 FINAL REMINDER
@@ -731,8 +846,13 @@ FINAL REMINDER
 
 You are NOT an evaluator.
 You are NOT a scoring engine.
-You are a narrative assistant explaining deterministic results
-computed by the system and reviewed by humans.`;
+You are NOT a decision-maker.
+
+You are a narrative assistant that explains deterministic ethical evaluation results,
+analyzes expert responses and question patterns,
+and highlights where human deliberation is required.
+
+Your output is advisory, explanatory, and non-binding.`;
 
   const userPrompt = `INPUT DATA:
 ${inputJson}
@@ -743,30 +863,47 @@ OUTPUT REQUIREMENTS:
 - Output MUST be valid JSON only (no markdown, no explanations, no extra text)
 - Do NOT include assumptions beyond the input
 - Ensure all string values are properly escaped
-- Array of principleInsights may contain 0 or more items
-- Array of keyTensions may contain 0 or more items
+- Ground EVERY insight in at least one data point from the input
+- Array of principleDeepDive may contain 0 or more items
+- Array of tensionAnalysis may contain 0 or more items
+- Array of priorityActions may contain 0 or more items
+- Array of questionAnalysis.highRiskQuestions may contain 0 or more items
+
+FIELD VALIDATION:
+- overallRiskLevel MUST be exactly one of: "LOW", "MEDIUM", "HIGH"
 - riskLevelNarrative MUST be exactly one of: "Safe", "Needs improvement", "High risk"
-- confidenceLevel MUST be exactly one of: "low", "medium", "high"
+- confidenceLevel MUST be exactly one of: "LOW", "MEDIUM", "HIGH"
 - reviewState MUST be exactly one of: "Proposed", "Under Review", "Accepted", "Disputed"
 - evidenceStatus MUST be exactly one of: "Evidence attached", "No evidence attached"
+- consensusLevel MUST be exactly one of: "High consensus", "Mixed", "Disputed" (or omit if votes not provided)
+
+REQUIRED FIELDS:
+- executiveInterpretation (object with overallRiskLevel, whyThisRiskLevel, overallSummary)
+- principleDeepDive (array)
+- questionAnalysis (object with highRiskQuestions array and patterns array)
+- tensionAnalysis (array)
+- tensionOverview (object with counts and keyTensions array)
+- priorityActions (array)
+- confidenceAndLimitations (object with confidenceLevel, limitations array, dataCompleteness object)
 
 IMPORTANT:
 - Return ONLY the JSON object, nothing else
 - Do not include markdown code blocks (\`\`\`json)
 - Do not include explanatory text before or after the JSON
-- Ensure JSON is valid and parseable`;
+- Ensure JSON is valid and parseable
+- Every claim in whyThisRiskLevel, whyLowOrModerate, whyItExists must reference specific scores, questions, or excerpts`;
 
   const modelNamesToTry = [
     "models/gemini-2.5-flash",
     "gemini-2.5-flash"
   ];
 
-  // Lower temperature for more consistent JSON output
+  // Lower temperature for more consistent JSON output, but slightly higher for better narrative quality
   const narrativeConfig = {
-    temperature: 0.3,
+    temperature: 0.4,
     topP: 0.95,
     topK: 40,
-    maxOutputTokens: 4096
+    maxOutputTokens: 8192 // Increased for more detailed analysis
   };
 
   let lastError = null;
@@ -816,37 +953,79 @@ IMPORTANT:
         throw new Error(`JSON parse hatası: ${parseError.message}`);
       }
 
-      // Validate required fields
-      if (!narrative.overallSummary || typeof narrative.overallSummary !== 'string') {
-        throw new Error('Invalid response: overallSummary field missing or invalid');
+      // Validate executiveInterpretation
+      if (!narrative.executiveInterpretation || typeof narrative.executiveInterpretation !== 'object') {
+        throw new Error('Invalid response: executiveInterpretation field missing or invalid');
       }
-      if (!Array.isArray(narrative.principleInsights)) {
-        throw new Error('Invalid response: principleInsights must be an array');
+      if (!['LOW', 'MEDIUM', 'HIGH'].includes(narrative.executiveInterpretation.overallRiskLevel)) {
+        throw new Error('Invalid response: executiveInterpretation.overallRiskLevel must be one of: LOW, MEDIUM, HIGH');
       }
-      if (!narrative.tensionOverview || typeof narrative.tensionOverview !== 'object') {
-        throw new Error('Invalid response: tensionOverview must be an object');
+      if (!Array.isArray(narrative.executiveInterpretation.whyThisRiskLevel)) {
+        throw new Error('Invalid response: executiveInterpretation.whyThisRiskLevel must be an array');
       }
-      if (!narrative.limitationsAndConfidence || typeof narrative.limitationsAndConfidence !== 'object') {
-        throw new Error('Invalid response: limitationsAndConfidence must be an object');
+      if (!narrative.executiveInterpretation.overallSummary || typeof narrative.executiveInterpretation.overallSummary !== 'string') {
+        throw new Error('Invalid response: executiveInterpretation.overallSummary must be a string');
       }
 
-      // Validate principleInsights structure
-      for (const insight of narrative.principleInsights) {
+      // Validate principleDeepDive
+      if (!Array.isArray(narrative.principleDeepDive)) {
+        throw new Error('Invalid response: principleDeepDive must be an array');
+      }
+      for (const insight of narrative.principleDeepDive) {
         if (!insight.principle || typeof insight.principle !== 'string') {
-          throw new Error('Invalid response: principleInsights[].principle must be a string');
+          throw new Error('Invalid response: principleDeepDive[].principle must be a string');
         }
-        if (!insight.summary || typeof insight.summary !== 'string') {
-          throw new Error('Invalid response: principleInsights[].summary must be a string');
+        if (typeof insight.score !== 'number') {
+          throw new Error('Invalid response: principleDeepDive[].score must be a number');
+        }
+        if (!Array.isArray(insight.whyLowOrModerate)) {
+          throw new Error('Invalid response: principleDeepDive[].whyLowOrModerate must be an array');
         }
         if (!['Safe', 'Needs improvement', 'High risk'].includes(insight.riskLevelNarrative)) {
-          throw new Error('Invalid response: principleInsights[].riskLevelNarrative must be one of: Safe, Needs improvement, High risk');
+          throw new Error('Invalid response: principleDeepDive[].riskLevelNarrative must be one of: Safe, Needs improvement, High risk');
         }
-        if (!Array.isArray(insight.topDrivers)) {
-          throw new Error('Invalid response: principleInsights[].topDrivers must be an array');
+        if (!insight.practicalRisk || typeof insight.practicalRisk !== 'string') {
+          throw new Error('Invalid response: principleDeepDive[].practicalRisk must be a string');
         }
       }
 
-      // Validate tensionOverview structure
+      // Validate questionAnalysis
+      if (!narrative.questionAnalysis || typeof narrative.questionAnalysis !== 'object') {
+        throw new Error('Invalid response: questionAnalysis field missing or invalid');
+      }
+      if (!Array.isArray(narrative.questionAnalysis.highRiskQuestions)) {
+        throw new Error('Invalid response: questionAnalysis.highRiskQuestions must be an array');
+      }
+      if (!Array.isArray(narrative.questionAnalysis.patterns)) {
+        throw new Error('Invalid response: questionAnalysis.patterns must be an array');
+      }
+
+      // Validate tensionAnalysis
+      if (!Array.isArray(narrative.tensionAnalysis)) {
+        throw new Error('Invalid response: tensionAnalysis must be an array');
+      }
+      for (const tension of narrative.tensionAnalysis) {
+        if (!tension.tension || typeof tension.tension !== 'string') {
+          throw new Error('Invalid response: tensionAnalysis[].tension must be a string');
+        }
+        if (!tension.whyItExists || typeof tension.whyItExists !== 'string') {
+          throw new Error('Invalid response: tensionAnalysis[].whyItExists must be a string');
+        }
+        if (!tension.riskIfUnresolved || typeof tension.riskIfUnresolved !== 'string') {
+          throw new Error('Invalid response: tensionAnalysis[].riskIfUnresolved must be a string');
+        }
+        if (!['Evidence attached', 'No evidence attached'].includes(tension.evidenceStatus)) {
+          throw new Error('Invalid response: tensionAnalysis[].evidenceStatus must be one of: Evidence attached, No evidence attached');
+        }
+        if (!['Proposed', 'Under Review', 'Accepted', 'Disputed'].includes(tension.reviewState)) {
+          throw new Error('Invalid response: tensionAnalysis[].reviewState must be one of: Proposed, Under Review, Accepted, Disputed');
+        }
+      }
+
+      // Validate tensionOverview
+      if (!narrative.tensionOverview || typeof narrative.tensionOverview !== 'object') {
+        throw new Error('Invalid response: tensionOverview field missing or invalid');
+      }
       if (typeof narrative.tensionOverview.underReviewCount !== 'number') {
         throw new Error('Invalid response: tensionOverview.underReviewCount must be a number');
       }
@@ -876,12 +1055,34 @@ IMPORTANT:
         }
       }
 
-      // Validate limitationsAndConfidence structure
-      if (!['low', 'medium', 'high'].includes(narrative.limitationsAndConfidence.confidenceLevel)) {
-        throw new Error('Invalid response: limitationsAndConfidence.confidenceLevel must be one of: low, medium, high');
+      // Validate priorityActions
+      if (!Array.isArray(narrative.priorityActions)) {
+        throw new Error('Invalid response: priorityActions must be an array');
       }
-      if (!narrative.limitationsAndConfidence.notes || typeof narrative.limitationsAndConfidence.notes !== 'string') {
-        throw new Error('Invalid response: limitationsAndConfidence.notes must be a string');
+      for (const action of narrative.priorityActions) {
+        if (typeof action.priority !== 'number') {
+          throw new Error('Invalid response: priorityActions[].priority must be a number');
+        }
+        if (!action.focusPrinciple || typeof action.focusPrinciple !== 'string') {
+          throw new Error('Invalid response: priorityActions[].focusPrinciple must be a string');
+        }
+        if (!action.justification || typeof action.justification !== 'string') {
+          throw new Error('Invalid response: priorityActions[].justification must be a string');
+        }
+        if (!action.suggestedNextStep || typeof action.suggestedNextStep !== 'string') {
+          throw new Error('Invalid response: priorityActions[].suggestedNextStep must be a string');
+        }
+      }
+
+      // Validate confidenceAndLimitations
+      if (!narrative.confidenceAndLimitations || typeof narrative.confidenceAndLimitations !== 'object') {
+        throw new Error('Invalid response: confidenceAndLimitations field missing or invalid');
+      }
+      if (!['LOW', 'MEDIUM', 'HIGH'].includes(narrative.confidenceAndLimitations.confidenceLevel)) {
+        throw new Error('Invalid response: confidenceAndLimitations.confidenceLevel must be one of: LOW, MEDIUM, HIGH');
+      }
+      if (!Array.isArray(narrative.confidenceAndLimitations.limitations)) {
+        throw new Error('Invalid response: confidenceAndLimitations.limitations must be an array');
       }
 
       console.log(`✅ Dashboard narrative başarıyla oluşturuldu (${modelName}).`);

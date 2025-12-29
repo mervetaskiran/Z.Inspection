@@ -192,3 +192,4 @@ IMPORTANT:
 6. **Geçersiz JSON**: Parse hatası yönetimi
 
 
+
